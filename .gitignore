@@ -1,0 +1,5 @@
+.vscode
+.env
+config/
+.DS_Store
+*.log
