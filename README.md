@@ -47,15 +47,29 @@ Jellyfin) also publish ports directly for LAN discovery/native app use.
    Both modes are always reachable at `qbittorrent:8080` on `homelab_net`,
    so nothing downstream needs to change when you switch.
 
-3. Bring up the stack:
+3. Bring up and configure the stack:
 
    ```bash
    docker compose up -d
+   ./scripts/setup.sh
    ```
 
-4. Visit each service's `*.media.lan` address (or its published port
-   directly) to finish first-run setup, then wire up indexers in Prowlarr
-   and point Sonarr/Radarr/Bazarr/Jellyseerr at each other.
+   `scripts/setup.sh` brings the containers up (if not already) and then
+   wires them together via each app's API: Sonarr/Radarr get their root
+   folders, qBittorrent download client, and Prowlarr indexers; Bazarr gets
+   connected to Sonarr/Radarr with an English subtitle profile; Jellyfin's
+   setup wizard is completed with your Movies/TV libraries; Jellyseerr signs
+   in through Jellyfin and connects to Sonarr/Radarr. It prompts for a
+   shared admin username/password if `ADMIN_USERNAME`/`ADMIN_PASSWORD`
+   aren't set in `.env`, and picks a curated set of public indexers unless
+   `PROWLARR_INDEXERS` says otherwise (see `.env.example`). It's safe to
+   re-run — every step checks current state first and skips what's already
+   configured.
+
+4. Add hosts-file entries (or LAN DNS records) pointing `*.media.lan` at
+   this machine so Caddy's reverse proxy addresses resolve, then visit
+   `http://sonarr.media.lan` etc. and log in with the admin credentials
+   from step 3.
 
 ## Notes
 
