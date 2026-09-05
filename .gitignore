@@ -1,5 +1,7 @@
 .vscode
 .env
-config/
+/config/
 .DS_Store
 *.log
+__pycache__/
+*.pyc
