@@ -279,6 +279,33 @@ def cmd_has_jellyseerr_app(args):
     print(YES if any(app["hostname"] == args.hostname for app in configured_apps) else NO)
 
 
+def _read_exclusion_patterns(path):
+    """Read a file of glob patterns (one per line, blank lines ignored) and
+    join them the way qBittorrent stores its File Exclusions preference."""
+    with open(path, encoding="utf-8") as exclusions_file:
+        return "\n".join(line.strip() for line in exclusions_file if line.strip())
+
+
+def cmd_qbt_exclusions_configured(args):
+    """Print yes/no: does the qBittorrent preferences JSON on stdin already
+    have File Exclusions enabled with exactly the patterns in EXCLUSIONS_FILE?"""
+    preferences = _load_stdin_json()
+    desired_patterns = _read_exclusion_patterns(args.exclusions_file)
+    enabled = preferences.get("excluded_file_names_enabled") is True
+    matches = preferences.get("excluded_file_names") == desired_patterns
+    print(YES if enabled and matches else NO)
+
+
+def cmd_qbt_exclusions_payload(args):
+    """Build a qBittorrent setPreferences payload enabling File Exclusions
+    with the patterns in EXCLUSIONS_FILE (one glob per line)."""
+    payload = {
+        "excluded_file_names_enabled": True,
+        "excluded_file_names": _read_exclusion_patterns(args.exclusions_file),
+    }
+    json.dump(payload, sys.stdout)
+
+
 def cmd_url_encode(args):
     """Print VALUE, percent-encoded for use in a query string."""
     print(urllib.parse.quote(args.value))
@@ -331,6 +358,8 @@ SUBCOMMANDS = [
     Subcommand("extract-token", cmd_extract_token, arguments=[("field", {})]),
     Subcommand("has-jellyfin-library", cmd_has_jellyfin_library, arguments=[("path", {})]),
     Subcommand("has-jellyseerr-app", cmd_has_jellyseerr_app, arguments=[("hostname", {})]),
+    Subcommand("qbt-exclusions-configured", cmd_qbt_exclusions_configured, arguments=[("exclusions_file", {})]),
+    Subcommand("qbt-exclusions-payload", cmd_qbt_exclusions_payload, arguments=[("exclusions_file", {})]),
     Subcommand("url-encode", cmd_url_encode, arguments=[("value", {})]),
 ]
 
