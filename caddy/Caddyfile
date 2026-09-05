@@ -1,32 +1,33 @@
 # LAN-only pseudo-domain for now. Resolve *.media.lan via hosts-file entries or LAN DNS.
-# Adding a real domain + `email` directive later gets automatic Let's Encrypt TLS with
-# no changes to the site blocks below. Per-site `basicauth`/`forward_auth` can be added
-# additively when auth is wanted.
+# Each site is prefixed with http:// so Caddy serves it as plain HTTP on port 80 and skips
+# automatic HTTPS for it (bare hostnames default to HTTPS-only on :443, which fails forever
+# trying to get a public ACME cert for a non-public .lan name). Swap to a real domain later:
+# drop the http:// prefix, add an `email` directive, and automatic HTTPS takes over.
 
-sonarr.media.lan {
+http://sonarr.media.lan {
 	reverse_proxy sonarr:8989
 }
 
-radarr.media.lan {
+http://radarr.media.lan {
 	reverse_proxy radarr:7878
 }
 
-prowlarr.media.lan {
+http://prowlarr.media.lan {
 	reverse_proxy prowlarr:9696
 }
 
-bazarr.media.lan {
+http://bazarr.media.lan {
 	reverse_proxy bazarr:6767
 }
 
-jellyfin.media.lan {
+http://jellyfin.media.lan {
 	reverse_proxy jellyfin:8096
 }
 
-jellyseerr.media.lan {
+http://jellyseerr.media.lan {
 	reverse_proxy jellyseerr:5055
 }
 
-qbittorrent.media.lan {
+http://qbittorrent.media.lan {
 	reverse_proxy qbittorrent:8080
 }
