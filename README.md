@@ -41,11 +41,22 @@ Jellyfin) also publish ports directly for LAN discovery/native app use.
 
 2. Choose torrent mode by setting `COMPOSE_PROFILES` in `.env`:
    - `novpn` — qBittorrent connects directly (default, no extra config)
-   - `vpn` — qBittorrent's traffic is routed through Gluetun; also set
-     `PIA_USER`, `PIA_PASSWORD`, `PIA_REGION`, and `LAN_SUBNET`
+   - `vpn` — qBittorrent's traffic is routed through Gluetun
 
    Both modes are always reachable at `qbittorrent:8080` on `homelab_net`,
    so nothing downstream needs to change when you switch.
+
+   For `vpn` mode, Gluetun (the container that runs the tunnel) supports 30+
+   VPN providers — see `.env.example` for ready-to-uncomment blocks for
+   **Private Internet Access** (default, WireGuard, supports port
+   forwarding), **ProtonVPN**, and **Mullvad** — all three have solid
+   no-logging track records and work cleanly for torrenting through Gluetun.
+   Any other provider Gluetun supports (NordVPN, Surfshark, AirVPN,
+   Windscribe, ...) works the same way: set `VPN_SERVICE_PROVIDER` to that
+   provider's Gluetun name and fill in whichever variables its page on the
+   [Gluetun wiki](https://github.com/qdm12/gluetun-wiki/tree/main/setup/providers)
+   calls for — the compose file's `gluetun` service reads Gluetun's own
+   variable names directly, so nothing else needs to change.
 
 3. Bring up and configure the stack:
 
