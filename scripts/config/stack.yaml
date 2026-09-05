@@ -1,0 +1,63 @@
+# Single source of truth for the values scripts/setup.sh needs to talk to each
+# service's API: container names/ports, media paths, and the few pieces of
+# per-app policy (default indexers, category IDs, preferred quality profile).
+#
+# Edit this file to change what setup.sh does; you should not need to touch
+# any script under scripts/lib/ for the changes below.
+#
+# Loaded by scripts/lib/common.sh via scripts/lib/api.py's `yaml-to-env`
+# subcommand, which flattens this into shell variables named
+# STACK_<SECTION>_<KEY> (e.g. services.sonarr.port -> STACK_SERVICES_SONARR_PORT).
+
+paths:
+  movies: /data/media/movies
+  tv: /data/media/tv
+
+services:
+  sonarr:
+    container: sonarr
+    port: 8989
+    api_version: v3
+    config_file: config/sonarr/config.xml
+  radarr:
+    container: radarr
+    port: 7878
+    api_version: v3
+    config_file: config/radarr/config.xml
+  prowlarr:
+    container: prowlarr
+    port: 9696
+    api_version: v1
+    config_file: config/prowlarr/config.xml
+  bazarr:
+    container: bazarr
+    port: 6767
+    config_file: config/bazarr/config/config.yaml
+  jellyfin:
+    container: jellyfin
+    port: 8096
+  jellyseerr:
+    container: jellyseerr
+    port: 5055
+  qbittorrent:
+    container: qbittorrent
+    port: 8080
+
+# Comma-separated Prowlarr indexer names, used as the fallback default when
+# PROWLARR_INDEXERS is unset in .env (see .env.example for the override rules).
+prowlarr:
+  default_indexers: "YTS,Knaben,1337x,EZTV,The Pirate Bay,TorrentDownload"
+  # Torznab category IDs Prowlarr syncs to each *arr app's applications config.
+  sync_categories:
+    sonarr: [5000, 5030, 5040, 5045, 5070, 5080]
+    radarr: [2000, 2010, 2030, 2040, 2045, 2060, 2070]
+
+jellyfin:
+  server_name: Jellyfin
+  ui_culture: en-US
+  metadata_country_code: US
+  preferred_metadata_language: en
+
+jellyseerr:
+  # Falls back to the first available profile if this name isn't found.
+  preferred_quality_profile: "HD - 720p/1080p"

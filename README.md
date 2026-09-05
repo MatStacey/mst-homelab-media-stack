@@ -26,6 +26,11 @@ Jellyfin) also publish ports directly for LAN discovery/native app use.
 ## Prerequisites
 
 - Docker Engine + Docker Compose plugin
+- `python3` with the `PyYAML` package (`pip install -r scripts/requirements.txt`)
+  — used by `scripts/setup.sh`. On Debian/Ubuntu-based systems this may fail
+  with an "externally managed environment" error; use `apt install
+  python3-yaml`, `pip install --user -r scripts/requirements.txt`, or a venv
+  instead.
 - A host directory for media/downloads (default: `/opt/media-data`, mounted
   read-write into qBittorrent/*arr and read-only into Jellyfin)
 - LAN DNS entries (or hosts-file entries) resolving `*.media.lan` to this
@@ -75,7 +80,25 @@ Jellyfin) also publish ports directly for LAN discovery/native app use.
    aren't set in `.env`, and picks a curated set of public indexers unless
    `PROWLARR_INDEXERS` says otherwise (see `.env.example`). It's safe to
    re-run — every step checks current state first and skips what's already
-   configured.
+   configured. Requires `python3` with the `PyYAML` package (`pip install
+   pyyaml`) in addition to Docker.
+
+   The script is split by service for easy maintenance:
+   - `scripts/config/stack.yaml` — ports, paths, default indexers, category
+     IDs, and other values you're likely to want to tweak. Change behavior
+     here before touching any script.
+   - `scripts/config/bazarr-language-profile.json` — the English subtitle
+     profile payload Bazarr gets configured with.
+   - `scripts/lib/api.py` — all JSON/YAML parsing lives here as small,
+     documented subcommands, rather than inline `python3 -c "..."` in bash.
+   - `scripts/lib/common.sh` — shared logging/polling/docker-exec helpers.
+   - `scripts/lib/servarr.sh` — building blocks shared by Sonarr and Radarr
+     (near-identical *arr APIs): auth, root folder, download client.
+   - `scripts/lib/<service>.sh` — one file per service (`sonarr.sh`,
+     `radarr.sh`, `prowlarr.sh`, `qbittorrent.sh`, `bazarr.sh`,
+     `jellyfin.sh`, `jellyseerr.sh`), each exposing a single
+     `configure_<service>` entry point. `setup.sh` itself is just the
+     orchestrator that sources these and calls them in order.
 
 4. Add hosts-file entries (or LAN DNS records) pointing `*.media.lan` at
    this machine so Caddy's reverse proxy addresses resolve, then visit
