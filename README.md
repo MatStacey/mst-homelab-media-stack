@@ -5,6 +5,81 @@ Radarr, Bazarr, Jellyfin, and Seerr — sitting behind a Caddy reverse
 proxy on a private Docker network, with an optional VPN-routed mode via
 Gluetun for qBittorrent, Prowlarr, and Byparr.
 
+```mermaid
+flowchart TB
+ subgraph VPNNet["Gluetun Network Namespace"]
+        Gluetun("Gluetun VPN Gateway")
+        qBittorrent("qBittorrent")
+        Prowlarr("Prowlarr")
+        Byparr("Byparr")
+  end
+ subgraph DockerNet["Docker Network: homelab_net"]
+        Jellyfin("Jellyfin")
+        Seerr("Seerr")
+        Homepage("Homepage")
+        Sonarr("Sonarr")
+        Radarr("Radarr")
+        Bazarr("Bazarr")
+        Recyclarr("Recyclarr")
+        VPNNet
+  end
+ subgraph Host["Local Host Machine"]
+        Caddy("Caddy Reverse Proxy")
+        OAuth2("OAuth2-Proxy")
+        GoogleSSO(("Google SSO"))
+        DockerNet
+        MediaStorage[("/opt/media-data")]
+  end
+    Internet(("Internet")) -- HTTPS (Port 443) --> Caddy
+    Caddy -- Auth Callback --> OAuth2
+    OAuth2 -. OAuth2 Flow .-> GoogleSSO
+    qBittorrent --- Gluetun
+    Prowlarr --- Gluetun
+    Byparr --- Gluetun
+    Caddy -- SSO Protected --> Homepage & Seerr
+    Caddy -- Native Auth --> Jellyfin & Sonarr & Radarr & Bazarr & qBittorrent & Prowlarr
+    Gluetun == WireGuard Tunnel ==> VPNServer(("VPN Server"))
+    Prowlarr -. Bypass Captchas .-> Byparr
+    Recyclarr -. Sync Configs .-> Sonarr & Radarr
+    Jellyfin -. Read Only .-> MediaStorage
+    Sonarr --> MediaStorage
+    Radarr --> MediaStorage
+    Bazarr --> MediaStorage
+    qBittorrent --> MediaStorage
+
+     Gluetun:::vpn
+     qBittorrent:::app
+     Prowlarr:::app
+     Byparr:::app
+     Jellyfin:::app
+     Seerr:::app
+     Homepage:::app
+     Sonarr:::app
+     Radarr:::app
+     Bazarr:::app
+     Recyclarr:::app
+     Caddy:::proxy
+     OAuth2:::proxy
+     GoogleSSO:::external
+     MediaStorage:::storage
+     Internet:::external
+     VPNServer:::external
+    classDef proxy fill:#2e6da4,stroke:#171d2c,stroke-width:2px,color:#fff
+    classDef app fill:#3f5fe0,stroke:#171d2c,stroke-width:1px,color:#fff
+    classDef vpn fill:#8b5cf6,stroke:#171d2c,stroke-width:2px,color:#fff
+    classDef storage fill:#171d2c,stroke:#262f45,stroke-width:2px,color:#e8ebf3
+    classDef external fill:#f4f6fb,stroke:#5b6480,stroke-width:1px,stroke-dasharray: 5 5,color:#1a2036
+    style Gluetun fill:#5b6480
+    style qBittorrent fill:#171d2c
+    style Prowlarr fill:#171d2c
+    style Byparr fill:#171d2c
+    style VPNNet fill:#757575
+    style GoogleSSO fill:#FFCDD2
+    style DockerNet fill:#616161
+    style Internet fill:#C8E6C9
+    style Host fill:#424242
+```
+
 ## Services
 
 | Service | Purpose | LAN address (via Caddy) |
