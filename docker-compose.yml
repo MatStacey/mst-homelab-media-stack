@@ -3,10 +3,18 @@ networks:
     driver: bridge
 
 services:
-  # --- qBittorrent: two mutually-exclusive variants, toggled via COMPOSE_PROFILES in .env ---
-  # Both are always reachable at hostname "qbittorrent:8080" on homelab_net (direct service
-  # name in novpn mode, network alias on gluetun in vpn mode) so nothing downstream
-  # (Caddy, Sonarr, Radarr, Prowlarr) needs to change when you switch modes.
+  # --- qBittorrent, Prowlarr, and Byparr each have two mutually-exclusive variants,
+  # toggled together via COMPOSE_PROFILES in .env: "novpn" runs them directly on
+  # homelab_net; "vpn" routes all three through Gluetun's tunnel instead (their "-vpn"
+  # service below, sharing gluetun's network namespace) - useful when an indexer is
+  # blocked at the ISP/network level rather than by a Cloudflare-style challenge, which
+  # Byparr alone can't get around. Each pair keeps the same container_name (Docker allows
+  # this since the profiles are mutually exclusive - only one of a pair ever runs), so
+  # nothing downstream (Caddy, Sonarr, Radarr, this repo's own setup.sh) needs to change
+  # when you switch modes: qBittorrent is reached via its published host port either way,
+  # while Prowlarr/Byparr are reached by the container names "prowlarr"/"byparr" both as
+  # a `docker exec` target (setup.sh) and as a network alias gluetun advertises in vpn
+  # mode (Caddy, Sonarr, Radarr, Bazarr).
 
   qbittorrent:
     image: lscr.io/linuxserver/qbittorrent:latest
@@ -46,7 +54,11 @@ services:
     networks:
       homelab_net:
         aliases:
-          - qbittorrent   # so downstream services always resolve "qbittorrent" regardless of mode
+          # So downstream services always resolve these names regardless of mode -
+          # see the mutually-exclusive-variants comment above services: for why.
+          - qbittorrent
+          - prowlarr
+          - byparr
     ports:
       - "8080:8080"      # qBittorrent WebUI (published here — qbittorrent-vpn has no netns of its own)
       - "6881:6881"       # torrent TCP
@@ -68,7 +80,10 @@ services:
       - SERVER_REGIONS=${VPN_REGIONS:-}
       - SERVER_CITIES=${VPN_CITIES:-}
       - FIREWALL_OUTBOUND_SUBNETS=${LAN_SUBNET}
-      - FIREWALL_INPUT_PORTS=8080
+      # WebUI/API ports for qBittorrent, Prowlarr, and Byparr - Gluetun firewalls
+      # inbound connections by default, so anything sharing its network namespace
+      # needs its port listed here to stay reachable from other containers.
+      - FIREWALL_INPUT_PORTS=8080,9696,8191
       - VPN_PORT_FORWARDING=${VPN_PORT_FORWARDING:-off}
       - TZ=${TZ}
     volumes:
@@ -105,6 +120,7 @@ services:
   prowlarr:
     image: lscr.io/linuxserver/prowlarr:latest
     container_name: prowlarr
+    profiles: ["novpn"]
     networks:
       - homelab_net
     environment:
@@ -118,6 +134,56 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
+  prowlarr-vpn:
+    image: lscr.io/linuxserver/prowlarr:latest
+    container_name: prowlarr
+    profiles: ["vpn"]
+    network_mode: "service:gluetun"
+    depends_on:
+      gluetun:
+        condition: service_healthy
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=${TZ}
+    volumes:
+      - ./config/prowlarr:/config
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
+  byparr:
+    # Solves Cloudflare/anti-bot challenges on behalf of Prowlarr for
+    # indexers that would otherwise return a challenge page instead of
+    # results. Drop-in replacement for the now-non-functional FlareSolverr -
+    # same /v1 request API and default port (8191), so Prowlarr's built-in
+    # "FlareSolverr" proxy type just needs pointing at this container.
+    image: ghcr.io/thephaseless/byparr:latest
+    container_name: byparr
+    profiles: ["novpn"]
+    networks:
+      - homelab_net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8191/health"]
+      interval: 30s
+      timeout: 15s
+      retries: 3
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
+  byparr-vpn:
+    image: ghcr.io/thephaseless/byparr:latest
+    container_name: byparr
+    profiles: ["vpn"]
+    network_mode: "service:gluetun"
+    depends_on:
+      gluetun:
+        condition: service_healthy
     security_opt:
       - no-new-privileges:true
     restart: unless-stopped
@@ -164,6 +230,33 @@ services:
       - no-new-privileges:true
     restart: unless-stopped
 
+  recyclarr:
+    # Keeps Sonarr/Radarr quality profiles and custom formats in sync with
+    # the community-maintained TRaSH Guides, on its own built-in cron
+    # schedule (CRON_SCHEDULE below) - no web UI, nothing to reverse-proxy.
+    # Runs as a fixed non-root user (UID 1000) baked into the image; its
+    # entrypoint already uses tini, so no init:true needed.
+    # No ":latest" tag is published for this image - only semver tags and
+    # "edge" (built from the unstable master branch). Pin to the major
+    # version instead, matching Recyclarr's own documented convention.
+    image: ghcr.io/recyclarr/recyclarr:8
+    container_name: recyclarr
+    networks:
+      - homelab_net
+    environment:
+      - TZ=${TZ}
+      - CRON_SCHEDULE=@daily
+    volumes:
+      - ./config/recyclarr:/config
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "supercronic"]
+      interval: 5m
+      timeout: 10s
+      retries: 3
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
   bazarr:
     image: lscr.io/linuxserver/bazarr:latest
     container_name: bazarr
@@ -200,19 +293,49 @@ services:
       - no-new-privileges:true
     restart: unless-stopped
 
-  jellyseerr:
-    image: fallenbagel/jellyseerr:latest
-    container_name: jellyseerr
+  seerr:
+    # Seerr is the merged successor to Overseerr/Jellyseerr (both are EOL as
+    # of 2026) - runs as a fixed non-root "node" user (UID 1000) baked into
+    # the image, so no PUID/PGID env vars, and needs init:true since it no
+    # longer bundles its own init process.
+    image: ghcr.io/seerr-team/seerr:latest
+    container_name: seerr
+    init: true
+    networks:
+      - homelab_net
+    environment:
+      - TZ=${TZ}
+    volumes:
+      - ./config/seerr:/app/config
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:5055/api/v1/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
+  homepage:
+    # Self-hosted dashboard with live widgets for every service in this
+    # stack, generated once from this stack's own ports/API keys
+    # (config/homepage/services.yaml) - edit that file by hand afterward to
+    # rearrange things; setup.sh won't overwrite it once it exists. No
+    # Docker socket is mounted for auto-discovery, to avoid docker.sock as
+    # an attack surface - static config covers the whole stack instead.
+    image: ghcr.io/gethomepage/homepage:latest
+    container_name: homepage
     networks:
       - homelab_net
     environment:
       - PUID=1000
       - PGID=1000
       - TZ=${TZ}
+      - HOMEPAGE_ALLOWED_HOSTS=homepage.media.lan
     volumes:
-      - ./config/jellyseerr:/app/config
+      - ./config/homepage:/app/config
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:5055/api/v1/status"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/healthcheck"]
       interval: 30s
       timeout: 10s
       retries: 3
