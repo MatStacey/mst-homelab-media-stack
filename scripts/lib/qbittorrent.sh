@@ -75,6 +75,23 @@ _configure_qbt_file_exclusions() {
   log "qBittorrent: file exclusions configured"
 }
 
+# Point qBittorrent's default save path under /data (the mount every *arr
+# container shares with it) instead of the image's own default of
+# /downloads, which isn't mounted to anything - Sonarr/Radarr flag a health
+# warning otherwise, since they can't see completed downloads at all. Idempotent.
+_ensure_qbt_save_path() {
+  local base_url="$1" cookies="$2"
+  local current_path
+  current_path="$(curl -s -b "$cookies" "$base_url/api/v2/app/preferences" | $PY get-field save_path)"
+  if [ "$current_path" = "$STACK_PATHS_DOWNLOADS" ]; then
+    log "qBittorrent: save path already set to $STACK_PATHS_DOWNLOADS, skipping"
+    return
+  fi
+  curl -s -b "$cookies" -X POST "$base_url/api/v2/app/setPreferences" \
+    --data-urlencode "json={\"save_path\":\"$STACK_PATHS_DOWNLOADS\"}" >/dev/null
+  log "qBittorrent: save path set to $STACK_PATHS_DOWNLOADS"
+}
+
 configure_qbittorrent() {
   local base_url="http://localhost:$STACK_SERVICES_QBITTORRENT_PORT"
   log "Configuring qBittorrent..."
@@ -83,6 +100,7 @@ configure_qbittorrent() {
 
   if _ensure_qbt_login "$base_url" "$cookies"; then
     _configure_qbt_file_exclusions "$base_url" "$cookies"
+    _ensure_qbt_save_path "$base_url" "$cookies"
   fi
 
   rm -f "$cookies"

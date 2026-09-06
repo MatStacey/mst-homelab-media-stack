@@ -12,6 +12,12 @@
 paths:
   movies: /data/media/movies
   tv: /data/media/tv
+  # Where qBittorrent saves completed downloads. Must be under /data (the
+  # mount every *arr container shares with qBittorrent) rather than the
+  # qBittorrent image's own default of /downloads, which isn't mounted to
+  # anything - otherwise Sonarr/Radarr can't see the files at all and flag
+  # a health warning about it.
+  downloads: /data/downloads
 
 services:
   sonarr:
@@ -36,12 +42,20 @@ services:
   jellyfin:
     container: jellyfin
     port: 8096
-  jellyseerr:
-    container: jellyseerr
+  seerr:
+    container: seerr
     port: 5055
   qbittorrent:
     container: qbittorrent
     port: 8080
+  byparr:
+    container: byparr
+    port: 8191
+  recyclarr:
+    container: recyclarr
+  homepage:
+    container: homepage
+    port: 3000
 
 # Comma-separated Prowlarr indexer names, used as the fallback default when
 # PROWLARR_INDEXERS is unset in .env (see .env.example for the override rules).
@@ -51,6 +65,11 @@ prowlarr:
   sync_categories:
     sonarr: [5000, 5030, 5040, 5045, 5070, 5080]
     radarr: [2000, 2010, 2030, 2040, 2045, 2060, 2070]
+  # Tag used to link the Byparr FlareSolverr-compatible proxy to indexers that
+  # need it. Applied automatically as a retry path when an indexer add fails
+  # (typically Cloudflare-protected sites returning a challenge page).
+  flaresolverr_tag: flaresolverr
+  flaresolverr_request_timeout: 60
 
 jellyfin:
   server_name: Jellyfin
@@ -58,6 +77,14 @@ jellyfin:
   metadata_country_code: US
   preferred_metadata_language: en
 
-jellyseerr:
+seerr:
   # Falls back to the first available profile if this name isn't found.
   preferred_quality_profile: "HD - 720p/1080p"
+
+# TRaSH Guides config template IDs (see https://github.com/recyclarr/config-templates)
+# Recyclarr syncs into Sonarr/Radarr. These pick the non-4K "WEB-1080p" tier - the
+# guides' standard general-purpose recommendation. Swap for a different template id
+# (4K, remux, anime, etc.) to change quality tiers.
+recyclarr:
+  sonarr_template: web-1080p
+  radarr_template: hd-bluray-web
