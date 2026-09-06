@@ -39,6 +39,21 @@ _add_jellyfin_library() {
   log "Jellyfin: added '$library_name' library ($path)"
 }
 
+# Find (or mint) a persistent Jellyfin API key named APP_NAME, for services
+# (Homepage) that need long-lived access rather than the short-lived session
+# token this script uses for itself. Idempotent: reuses a same-named key.
+_ensure_jellyfin_api_key() {
+  local base_url="$1" token="$2" app_name="$3"
+  local existing_key
+  existing_key="$(cin jellyfin -H "X-Emby-Token: $token" "$base_url/Auth/Keys" | $PY jellyfin-api-key "$app_name")"
+  if [ -n "$existing_key" ]; then
+    echo "$existing_key"
+    return
+  fi
+  cin jellyfin -X POST "$base_url/Auth/Keys?app=$app_name" -H "X-Emby-Token: $token" >/dev/null
+  cin jellyfin -H "X-Emby-Token: $token" "$base_url/Auth/Keys" | $PY jellyfin-api-key "$app_name"
+}
+
 configure_jellyfin() {
   local base_url="http://localhost:$STACK_SERVICES_JELLYFIN_PORT"
   log "Configuring Jellyfin..."
@@ -60,4 +75,7 @@ configure_jellyfin() {
   _add_jellyfin_library "$base_url" "Movies" "movies" "$STACK_PATHS_MOVIES" "$token"
   _add_jellyfin_library "$base_url" "TV Shows" "tvshows" "$STACK_PATHS_TV" "$token"
   cin jellyfin -X POST "$base_url/Library/Refresh" -H "X-Emby-Token: $token" >/dev/null
+
+  # shellcheck disable=SC2034  # consumed by lib/homepage.sh's configure_homepage
+  JELLYFIN_KEY="$(_ensure_jellyfin_api_key "$base_url" "$token" Homepage)"
 }
