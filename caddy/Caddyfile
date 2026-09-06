@@ -1,33 +1,44 @@
-# LAN-only pseudo-domain for now. Resolve *.media.lan via hosts-file entries or LAN DNS.
-# Each site is prefixed with http:// so Caddy serves it as plain HTTP on port 80 and skips
-# automatic HTTPS for it (bare hostnames default to HTTPS-only on :443, which fails forever
-# trying to get a public ACME cert for a non-public .lan name). Swap to a real domain later:
-# drop the http:// prefix, add an `email` directive, and automatic HTTPS takes over.
+# LAN-only pseudo-domain: *.media.lan isn't a publicly-resolvable domain, so it can never
+# get a real Let's Encrypt certificate. `local_certs` tells Caddy to use its own internal CA
+# for every site below instead - it self-signs a cert per hostname and still gets you HTTPS
+# (with an automatic http->https redirect), but every device needs that CA's root certificate
+# installed as trusted or it'll show a certificate warning. After bringing the stack up, grab
+# the root cert from config/caddy/data/caddy/pki/authorities/local/root.crt and install it as
+# a trusted root CA on each device that will access these sites (see README's TLS notes) - some
+# devices (smart TVs, some apps) can't accept a custom CA at all and will need to keep using
+# qBittorrent's/Jellyfin's own published ports directly instead.
+{
+	local_certs
+}
 
-http://sonarr.media.lan {
+sonarr.media.lan {
 	reverse_proxy sonarr:8989
 }
 
-http://radarr.media.lan {
+radarr.media.lan {
 	reverse_proxy radarr:7878
 }
 
-http://prowlarr.media.lan {
+prowlarr.media.lan {
 	reverse_proxy prowlarr:9696
 }
 
-http://bazarr.media.lan {
+bazarr.media.lan {
 	reverse_proxy bazarr:6767
 }
 
-http://jellyfin.media.lan {
+jellyfin.media.lan {
 	reverse_proxy jellyfin:8096
 }
 
-http://jellyseerr.media.lan {
-	reverse_proxy jellyseerr:5055
+seerr.media.lan {
+	reverse_proxy seerr:5055
 }
 
-http://qbittorrent.media.lan {
+qbittorrent.media.lan {
 	reverse_proxy qbittorrent:8080
+}
+
+homepage.media.lan {
+	reverse_proxy homepage:3000
 }
