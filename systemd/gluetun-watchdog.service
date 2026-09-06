@@ -1,0 +1,12 @@
+[Unit]
+Description=Restart VPN-routed media stack services when gluetun restarts
+
+[Service]
+Type=simple
+WorkingDirectory=%h/vcs/personal/mst-homelab-media-stack
+ExecStart=%h/vcs/personal/mst-homelab-media-stack/scripts/gluetun-watchdog.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

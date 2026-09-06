@@ -75,6 +75,23 @@ Jellyfin) also publish ports directly for LAN discovery/native app use.
    calls for — the compose file's `gluetun` service reads Gluetun's own
    variable names directly, so nothing else needs to change.
 
+   With port forwarding on, `setup.sh` also keeps qBittorrent's listening
+   port in sync with whatever port the VPN provider forwards (see
+   `scripts/gluetun-port-forward-hook.sh`) - without this, incoming peer
+   connections silently can't reach you, which hurts speed on
+   less-popular torrents. Since `qbittorrent-vpn`/`prowlarr-vpn`/`byparr-vpn`
+   share Gluetun's network namespace, they also go unreachable (though
+   still shown "running") whenever Gluetun's own container restarts -
+   `scripts/gluetun-watchdog.sh` + `systemd/gluetun-watchdog.service` restart
+   them automatically when that happens. Install it once with:
+   ```
+   mkdir -p ~/.config/systemd/user
+   cp systemd/gluetun-watchdog.service ~/.config/systemd/user/
+   systemctl --user daemon-reload
+   systemctl --user enable --now gluetun-watchdog.service
+   sudo loginctl enable-linger "$USER"   # keeps it running without a login session
+   ```
+
 3. Bring up and configure the stack:
 
    ```bash
