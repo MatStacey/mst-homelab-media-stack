@@ -3,13 +3,36 @@
 # Requires servarr.sh (shared *arr auth function) and PROWLARR_KEY/SONARR_KEY/
 # RADARR_KEY to already be set by setup.sh.
 
+# Build and POST one indexer payload, optionally tagged so Prowlarr routes it
+# through the Byparr proxy. Exit code distinguishes "not a known indexer name"
+# (1, not worth retrying) from "add failed" (2, e.g. unreachable/challenged -
+# worth a Byparr retry).
+_post_prowlarr_indexer() {
+  local name="$1" schema_json="$2" app_profile_id="$3" tag_id="${4:-}"
+  local tag_args=()
+  [ -n "$tag_id" ] && tag_args=(--tag-id "$tag_id")
+
+  local payload_file
+  payload_file="$(mktemp)"
+  if ! $PY prowlarr-indexer-payload "$schema_json" "$name" "$app_profile_id" "${tag_args[@]}" > "$payload_file"; then
+    rm -f "$payload_file"
+    return 1
+  fi
+
+  _docker_cp_and_remove_local "$payload_file" prowlarr /tmp/idx.json
+  local add_response
+  add_response="$(cin prowlarr -X POST -H "X-Api-Key: $PROWLARR_KEY" -H "Content-Type: application/json" \
+    "http://localhost:$STACK_SERVICES_PROWLARR_PORT/api/v1/indexer" --data @/tmp/idx.json)"
+  [ "$(echo "$add_response" | $PY indexer-add-succeeded)" = "yes" ] || return 2
+}
+
 # Add one Prowlarr indexer by NAME if it isn't already configured. Looks NAME
 # up against Prowlarr's own indexer schema (so only real, known indexer names
-# work) and reports - rather than fails the whole script - when a tracker
-# site is unreachable from this network (common for public torrent trackers
-# behind ISP-level blocking).
+# work). If the plain add fails and FLARESOLVERR_TAG_ID is set, retries once
+# through the Byparr proxy before reporting - rather than failing the whole
+# script - that the tracker site couldn't be reached.
 _add_prowlarr_indexer() {
-  local name="$1" schema_json="$2" existing_json="$3" app_profile_id="$4"
+  local name="$1" schema_json="$2" existing_json="$3" app_profile_id="$4" flaresolverr_tag_id="${5:-}"
   local already_exists
   already_exists="$($PY prowlarr-indexer-exists "$existing_json" "$name")"
   if [ "$already_exists" = "yes" ]; then
@@ -17,23 +40,52 @@ _add_prowlarr_indexer() {
     return
   fi
 
-  local payload_file
-  payload_file="$(mktemp)"
-  if ! $PY prowlarr-indexer-payload "$schema_json" "$name" "$app_profile_id" > "$payload_file"; then
+  _post_prowlarr_indexer "$name" "$schema_json" "$app_profile_id"
+  local status=$?
+  if [ "$status" -eq 0 ]; then
+    log "Prowlarr: added indexer '$name'"
+    return
+  fi
+  if [ "$status" -eq 1 ]; then
     warn "Prowlarr: '$name' is not a known indexer name, skipping"
-    rm -f "$payload_file"
     return
   fi
 
-  _docker_cp_and_remove_local "$payload_file" prowlarr /tmp/idx.json
-  local add_response
-  add_response="$(cin prowlarr -X POST -H "X-Api-Key: $PROWLARR_KEY" -H "Content-Type: application/json" \
-    "http://localhost:$STACK_SERVICES_PROWLARR_PORT/api/v1/indexer" --data @/tmp/idx.json)"
-  if [ "$(echo "$add_response" | $PY indexer-add-succeeded)" != "yes" ]; then
-    warn "Prowlarr: could not connect to '$name' (site may be unreachable from this network) - skipped"
+  if [ -n "$flaresolverr_tag_id" ] && _post_prowlarr_indexer "$name" "$schema_json" "$app_profile_id" "$flaresolverr_tag_id"; then
+    log "Prowlarr: added indexer '$name' via Byparr"
     return
   fi
-  log "Prowlarr: added indexer '$name'"
+  warn "Prowlarr: could not connect to '$name' (site may be unreachable from this network) - skipped"
+}
+
+# Find-or-create the Prowlarr tag that links indexers to the Byparr proxy, and
+# the Byparr FlareSolverr-type proxy itself tagged with it. Echoes the tag id
+# so _add_prowlarr_indexer can retry failed indexers through it.
+_configure_byparr_proxy() {
+  local tag_label="$STACK_PROWLARR_FLARESOLVERR_TAG"
+  local tag_id
+  tag_id="$(cin prowlarr -H "X-Api-Key: $PROWLARR_KEY" "http://localhost:$STACK_SERVICES_PROWLARR_PORT/api/v1/tag" | $PY find-tag-id "$tag_label")"
+  if [ -z "$tag_id" ]; then
+    tag_id="$(cin prowlarr -X POST -H "X-Api-Key: $PROWLARR_KEY" -H "Content-Type: application/json" \
+      "http://localhost:$STACK_SERVICES_PROWLARR_PORT/api/v1/tag" -d "{\"label\":\"$tag_label\"}" | $PY get-field id)"
+    log "Prowlarr: created '$tag_label' tag"
+  fi
+
+  local already_exists
+  already_exists="$(cin prowlarr -H "X-Api-Key: $PROWLARR_KEY" "http://localhost:$STACK_SERVICES_PROWLARR_PORT/api/v1/indexerproxy" | $PY has-indexerproxy "Byparr")"
+  if [ "$already_exists" != "yes" ]; then
+    cin prowlarr -X POST -H "X-Api-Key: $PROWLARR_KEY" -H "Content-Type: application/json" \
+      "http://localhost:$STACK_SERVICES_PROWLARR_PORT/api/v1/indexerproxy" -d "{
+        \"name\": \"Byparr\", \"implementation\": \"FlareSolverr\", \"configContract\": \"FlareSolverrSettings\",
+        \"tags\": [$tag_id],
+        \"fields\": [
+          {\"name\":\"host\",\"value\":\"http://byparr:$STACK_SERVICES_BYPARR_PORT/\"},
+          {\"name\":\"requestTimeout\",\"value\":$STACK_PROWLARR_FLARESOLVERR_REQUEST_TIMEOUT}
+        ]}" >/dev/null
+    log "Prowlarr: added Byparr FlareSolverr proxy"
+  fi
+
+  echo "$tag_id"
 }
 
 _configure_prowlarr_indexers() {
@@ -44,6 +96,9 @@ _configure_prowlarr_indexers() {
     log "Prowlarr: PROWLARR_INDEXERS is empty, skipping indexer setup"
     return
   fi
+
+  local flaresolverr_tag_id
+  flaresolverr_tag_id="$(_configure_byparr_proxy)"
 
   local app_profile_id schema_json existing_json
   app_profile_id="$(cin prowlarr -H "X-Api-Key: $PROWLARR_KEY" "http://localhost:$STACK_SERVICES_PROWLARR_PORT/api/v1/appprofile" | $PY get-field 0.id)"
@@ -57,7 +112,7 @@ _configure_prowlarr_indexers() {
   for raw_name in "${indexer_list[@]}"; do
     read -r name <<< "$raw_name"
     [ -z "$name" ] && continue
-    _add_prowlarr_indexer "$name" "$schema_json" "$existing_json" "$app_profile_id"
+    _add_prowlarr_indexer "$name" "$schema_json" "$existing_json" "$app_profile_id" "$flaresolverr_tag_id"
   done
 
   _docker_rm_in_container prowlarr /tmp/idx.json
