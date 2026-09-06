@@ -89,6 +89,12 @@ recyclarr:
   sonarr_template: web-1080p
   radarr_template: hd-bluray-web
 
+servarr:
+  # Sonarr/Radarr/Prowlarr's steady-state log level (Settings > General >
+  # Logging) - "debug" generates real disk churn over time and is meant for
+  # active troubleshooting, not everyday running.
+  log_level: info
+
 qbittorrent:
   # Above qBittorrent's own conservative defaults (3/3/5) so Sonarr/Radarr
   # grabs run in parallel instead of queueing behind each other - WireGuard's

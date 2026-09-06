@@ -144,6 +144,7 @@ _configure_prowlarr_app() {
 configure_prowlarr() {
   log "Configuring Prowlarr..."
   configure_servarr_auth "Prowlarr" prowlarr "$STACK_SERVICES_PROWLARR_PORT" "$STACK_SERVICES_PROWLARR_API_VERSION" "$PROWLARR_KEY"
+  configure_servarr_loglevel "Prowlarr" prowlarr "$STACK_SERVICES_PROWLARR_PORT" "$STACK_SERVICES_PROWLARR_API_VERSION" "$PROWLARR_KEY"
   _configure_prowlarr_indexers
   _configure_prowlarr_app "Sonarr" "Sonarr" "SonarrSettings" "http://sonarr:$STACK_SERVICES_SONARR_PORT" "$SONARR_KEY" "[$STACK_PROWLARR_SYNC_CATEGORIES_SONARR]"
   _configure_prowlarr_app "Radarr" "Radarr" "RadarrSettings" "http://radarr:$STACK_SERVICES_RADARR_PORT" "$RADARR_KEY" "[$STACK_PROWLARR_SYNC_CATEGORIES_RADARR]"

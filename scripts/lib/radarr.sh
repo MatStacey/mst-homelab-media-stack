@@ -7,6 +7,7 @@ configure_radarr() {
   local port="$STACK_SERVICES_RADARR_PORT" api_version="$STACK_SERVICES_RADARR_API_VERSION"
   log "Configuring Radarr..."
   configure_servarr_auth           "Radarr" radarr "$port" "$api_version" "$RADARR_KEY"
+  configure_servarr_loglevel       "Radarr" radarr "$port" "$api_version" "$RADARR_KEY"
   configure_servarr_rootfolder     "Radarr" radarr "$port" "$api_version" "$RADARR_KEY" "$STACK_PATHS_MOVIES"
   configure_servarr_downloadclient "Radarr" radarr "$port" "$api_version" "$RADARR_KEY" "movies-radarr"
 }

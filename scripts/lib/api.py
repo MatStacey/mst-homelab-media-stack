@@ -154,6 +154,16 @@ def cmd_merge_host_auth(args):
     json.dump(host_config, sys.stdout)
 
 
+def cmd_merge_field(args):
+    """Set one top-level FIELD to VALUE in a JSON document on stdin, and print
+    the full object back out ready to PUT. Shared by any config that just
+    needs one field changed in place without disturbing the rest (e.g. the
+    *arr apps' config/host logLevel)."""
+    document = _load_stdin_json()
+    document[args.field] = args.value
+    json.dump(document, sys.stdout)
+
+
 def cmd_has_root_folder(args):
     """Print yes/no: does the rootfolder list on stdin already contain PATH?"""
     root_folders = _load_stdin_json()
@@ -287,6 +297,23 @@ def cmd_has_jellyfin_library(args):
     """Print yes/no: does the VirtualFolders list on stdin already cover PATH?"""
     virtual_folders = _load_stdin_json()
     print(YES if any(args.path in library["Locations"] for library in virtual_folders) else NO)
+
+
+def cmd_jellyfin_realtime_monitor_payload(args):
+    """Print a ready-to-POST /Library/VirtualFolders/LibraryOptions body that
+    turns on EnableRealtimeMonitor for the library whose Locations includes
+    PATH (from a GET /Library/VirtualFolders response on stdin), preserving
+    every other existing LibraryOptions field untouched. Prints nothing if no
+    library covers that path, or it's already enabled - callers treat empty
+    output as "nothing to do".
+    """
+    virtual_folders = _load_stdin_json()
+    matching = next((library for library in virtual_folders if args.path in library["Locations"]), None)
+    if matching is None or matching["LibraryOptions"]["EnableRealtimeMonitor"]:
+        return
+    library_options = dict(matching["LibraryOptions"])
+    library_options["EnableRealtimeMonitor"] = True
+    json.dump({"Id": matching["ItemId"], "LibraryOptions": library_options}, sys.stdout)
 
 
 def cmd_jellyfin_api_key(args):
@@ -446,6 +473,10 @@ SUBCOMMANDS = [
         ("username", {}),
         ("password", {}),
     ]),
+    Subcommand("merge-field", cmd_merge_field, "set one top-level field in stdin JSON", [
+        ("field", {}),
+        ("value", {}),
+    ]),
     Subcommand("has-root-folder", cmd_has_root_folder, arguments=[("path", {})]),
     Subcommand("has-download-client", cmd_has_download_client, arguments=[("implementation", {})]),
     Subcommand("prowlarr-indexer-exists", cmd_prowlarr_indexer_exists, arguments=[
@@ -461,12 +492,14 @@ SUBCOMMANDS = [
     Subcommand("indexer-add-succeeded", cmd_indexer_add_succeeded),
     Subcommand("has-application", cmd_has_named_entry, arguments=[("name", {})]),
     Subcommand("has-indexerproxy", cmd_has_named_entry, arguments=[("name", {})]),
+    Subcommand("has-notification", cmd_has_named_entry, arguments=[("name", {})]),
     Subcommand("find-tag-id", cmd_find_tag_id, arguments=[("label", {})]),
     Subcommand("quality-profile-id", cmd_quality_profile_id, arguments=[("preferred_name", {})]),
     Subcommand("bazarr-needs-setup", cmd_bazarr_needs_setup, arguments=[("username", {})]),
     Subcommand("jellyfin-wizard-completed", cmd_jellyfin_wizard_completed),
     Subcommand("extract-token", cmd_extract_token, arguments=[("field", {})]),
     Subcommand("has-jellyfin-library", cmd_has_jellyfin_library, arguments=[("path", {})]),
+    Subcommand("jellyfin-realtime-monitor-payload", cmd_jellyfin_realtime_monitor_payload, arguments=[("path", {})]),
     Subcommand("jellyfin-api-key", cmd_jellyfin_api_key, arguments=[("app_name", {})]),
     Subcommand("has-seerr-app", cmd_has_seerr_app, arguments=[("hostname", {})]),
     Subcommand("jellyfin-library-ids", cmd_jellyfin_library_ids),

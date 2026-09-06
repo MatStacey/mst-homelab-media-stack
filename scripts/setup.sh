@@ -107,6 +107,10 @@ configure_prowlarr
 configure_qbittorrent
 configure_bazarr
 configure_jellyfin
+if [ -n "$JELLYFIN_KEY" ]; then
+  configure_servarr_jellyfin_notification "Sonarr" sonarr "$STACK_SERVICES_SONARR_PORT" "$STACK_SERVICES_SONARR_API_VERSION" "$SONARR_KEY"
+  configure_servarr_jellyfin_notification "Radarr" radarr "$STACK_SERVICES_RADARR_PORT" "$STACK_SERVICES_RADARR_API_VERSION" "$RADARR_KEY"
+fi
 configure_seerr
 configure_recyclarr
 configure_homepage

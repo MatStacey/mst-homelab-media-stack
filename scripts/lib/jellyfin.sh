@@ -35,8 +35,32 @@ _add_jellyfin_library() {
   encoded_name="$($PY url-encode "$library_name")"
   cin jellyfin -X POST "$base_url/Library/VirtualFolders?name=${encoded_name}&collectionType=$collection_type&refreshLibrary=false" \
     -H "X-Emby-Token: $token" -H "Content-Type: application/json" \
-    -d "{\"LibraryOptions\":{\"PathInfos\":[{\"Path\":\"$path\"}],\"EnablePhotos\":false}}" >/dev/null
+    -d "{\"LibraryOptions\":{\"PathInfos\":[{\"Path\":\"$path\"}],\"EnablePhotos\":false,\"EnableRealtimeMonitor\":true}}" >/dev/null
   log "Jellyfin: added '$library_name' library ($path)"
+}
+
+# Turn on real-time filesystem monitoring for the library covering PATH, so
+# new files are picked up immediately instead of waiting for a periodic scan.
+# Idempotent, and fixes libraries that predate _add_jellyfin_library setting
+# this explicitly at creation time (this stack's original TV Shows library
+# had it off while Movies had it on - an inconsistency, not a deliberate
+# choice - hence fixing existing libraries here rather than only new ones).
+_ensure_jellyfin_realtime_monitor() {
+  local base_url="$1" path="$2" token="$3"
+  local payload
+  payload="$(cin jellyfin -H "X-Emby-Token: $token" "$base_url/Library/VirtualFolders" | $PY jellyfin-realtime-monitor-payload "$path")"
+  if [ -z "$payload" ]; then
+    log "Jellyfin: real-time monitoring already enabled for $path, skipping"
+    return
+  fi
+  local payload_file
+  payload_file="$(mktemp)"
+  echo "$payload" > "$payload_file"
+  _docker_cp_and_remove_local "$payload_file" jellyfin /tmp/libopts.json
+  cin jellyfin -X POST "$base_url/Library/VirtualFolders/LibraryOptions" \
+    -H "X-Emby-Token: $token" -H "Content-Type: application/json" --data @/tmp/libopts.json >/dev/null
+  _docker_rm_in_container jellyfin /tmp/libopts.json
+  log "Jellyfin: enabled real-time monitoring for $path"
 }
 
 # Find (or mint) a persistent Jellyfin API key named APP_NAME, for services
@@ -74,6 +98,8 @@ configure_jellyfin() {
 
   _add_jellyfin_library "$base_url" "Movies" "movies" "$STACK_PATHS_MOVIES" "$token"
   _add_jellyfin_library "$base_url" "TV Shows" "tvshows" "$STACK_PATHS_TV" "$token"
+  _ensure_jellyfin_realtime_monitor "$base_url" "$STACK_PATHS_MOVIES" "$token"
+  _ensure_jellyfin_realtime_monitor "$base_url" "$STACK_PATHS_TV" "$token"
   cin jellyfin -X POST "$base_url/Library/Refresh" -H "X-Emby-Token: $token" >/dev/null
 
   # shellcheck disable=SC2034  # consumed by lib/homepage.sh's configure_homepage

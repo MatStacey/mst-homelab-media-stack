@@ -26,6 +26,27 @@ configure_servarr_auth() {
   log "$name: login set for $ADMIN_USERNAME"
 }
 
+# Set the *arr app's log level (Settings > General > Logging). Idempotent.
+configure_servarr_loglevel() {
+  local name="$1" container="$2" port="$3" api_version="$4" key="$5"
+  local host_config current_level
+  host_config="$(cin "$container" -H "X-Api-Key: $key" "http://localhost:$port/api/$api_version/config/host")"
+  current_level="$(echo "$host_config" | $PY get-field logLevel)"
+  if [ "$current_level" = "$STACK_SERVARR_LOG_LEVEL" ]; then
+    log "$name: log level already set to $STACK_SERVARR_LOG_LEVEL, skipping"
+    return
+  fi
+  local host_config_id host_config_file
+  host_config_id="$(echo "$host_config" | $PY get-field id)"
+  host_config_file="$(mktemp)"
+  echo "$host_config" | $PY merge-field logLevel "$STACK_SERVARR_LOG_LEVEL" > "$host_config_file"
+  _docker_cp_and_remove_local "$host_config_file" "$container" /tmp/host.json
+  cin "$container" -X PUT -H "X-Api-Key: $key" -H "Content-Type: application/json" \
+    "http://localhost:$port/api/$api_version/config/host/$host_config_id" --data @/tmp/host.json >/dev/null
+  _docker_rm_in_container "$container" /tmp/host.json
+  log "$name: log level set to $STACK_SERVARR_LOG_LEVEL"
+}
+
 # Ensure PATH exists as a root folder. Idempotent.
 configure_servarr_rootfolder() {
   local name="$1" container="$2" port="$3" api_version="$4" key="$5" path="$6"
@@ -38,6 +59,29 @@ configure_servarr_rootfolder() {
   cin "$container" -X POST -H "X-Api-Key: $key" -H "Content-Type: application/json" \
     "http://localhost:$port/api/$api_version/rootfolder" -d "{\"path\":\"$path\"}" >/dev/null
   log "$name: added root folder $path"
+}
+
+# Connect a *arr app to Jellyfin as a notification target, so a completed
+# import triggers an immediate, targeted Jellyfin library scan instead of
+# waiting on Jellyfin's own real-time-monitor/periodic scan. Idempotent.
+configure_servarr_jellyfin_notification() {
+  local name="$1" container="$2" port="$3" api_version="$4" key="$5"
+  local already_exists
+  already_exists="$(cin "$container" -H "X-Api-Key: $key" "http://localhost:$port/api/$api_version/notification" | $PY has-notification Jellyfin)"
+  if [ "$already_exists" = "yes" ]; then
+    log "$name: Jellyfin notification already configured, skipping"
+    return
+  fi
+  cin "$container" -X POST -H "X-Api-Key: $key" -H "Content-Type: application/json" \
+    "http://localhost:$port/api/$api_version/notification" -d "{
+      \"name\": \"Jellyfin\", \"implementation\": \"MediaBrowser\", \"configContract\": \"MediaBrowserSettings\",
+      \"onDownload\": true, \"onUpgrade\": true,
+      \"fields\": [
+        {\"name\":\"host\",\"value\":\"jellyfin\"}, {\"name\":\"port\",\"value\":$STACK_SERVICES_JELLYFIN_PORT},
+        {\"name\":\"useSsl\",\"value\":false}, {\"name\":\"apiKey\",\"value\":\"$JELLYFIN_KEY\"},
+        {\"name\":\"notify\",\"value\":false}, {\"name\":\"updateLibrary\",\"value\":true}
+      ]}" >/dev/null
+  log "$name: connected Jellyfin notification (library auto-refresh on import)"
 }
 
 # Add qBittorrent as a download client under the given completed-download CATEGORY.
