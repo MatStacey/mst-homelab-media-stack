@@ -276,11 +276,18 @@ Jellyfin) also publish ports directly for LAN discovery/native app use.
      root-relative asset paths - see the landing-page/status-dashboard split
      above for why).
    - Once authenticated, find your node's MagicDNS name (`docker exec
-     tailscale tailscale status`, or the admin console) and add it to
-     `HOMEPAGE_ALLOWED_HOSTS` in `docker-compose.yml` (comma-separated),
-     then `docker compose up -d homepage` once - Homepage rejects requests
-     whose `Host` header isn't in that list, and this hostname can't be
-     known ahead of time.
+     tailscale tailscale status`, or the admin console) and add
+     `<name>:3000` to `HOMEPAGE_ALLOWED_HOSTS` in `docker-compose.yml`
+     (comma-separated), then `docker compose up -d homepage` once - Homepage
+     rejects requests whose `Host` header isn't an exact match including the
+     port, and this hostname can't be known ahead of time.
+   - If a Tailscale URL fails to connect from a device that also runs
+     another VPN client (ProtonVPN, etc.), that's very likely the cause,
+     not this stack - confirmed live in this project's own setup: a second
+     VPN's routing can capture traffic meant for Tailscale's own tunnel
+     even with its kill switch off. Disconnecting the other VPN (or setting
+     up split-tunneling to exclude Tailscale, if it supports that) resolves
+     it.
    - From any device signed into the same tailnet:
      `https://media-stack.<your-tailnet>.ts.net` (landing page) and
      `:8096`/`:5055`/`:8080`/`:3000` for the rest - no certificate warnings,

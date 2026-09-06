@@ -388,9 +388,11 @@ services:
       - PGID=1000
       - TZ=${TZ}
       # Comma-separated. Add your Tailscale MagicDNS name here too once known
-      # (e.g. media-stack.<tailnet>.ts.net) if exposing this via Tailscale Serve -
-      # Homepage rejects requests whose Host header isn't in this list.
-      - HOMEPAGE_ALLOWED_HOSTS=status.media.lan
+      # if exposing this via Tailscale Serve - Homepage rejects requests
+      # whose Host header isn't in this list, and needs an exact match
+      # INCLUDING the port for anything not on 443/80 (confirmed live: a
+      # bare "media-stack.<tailnet>.ts.net" 400'd until ":3000" was added).
+      - HOMEPAGE_ALLOWED_HOSTS=status.media.lan,media-stack.tail1525fe.ts.net:3000
     volumes:
       - ./config/homepage:/app/config
     healthcheck:
