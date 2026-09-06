@@ -106,7 +106,9 @@ Jellyfin) also publish ports directly for LAN discovery/native app use.
    setup wizard is completed with your Movies/TV libraries; Seerr signs
    in through Jellyfin and connects to Sonarr/Radarr. It prompts for a
    shared admin username/password if `ADMIN_USERNAME`/`ADMIN_PASSWORD`
-   aren't set in `.env`, and picks a curated set of public indexers unless
+   aren't set in `.env` or in `~/secrets/homelab.sh` (a plain
+   `ADMIN_USERNAME=...`/`ADMIN_PASSWORD=...` shell file outside this repo,
+   for running it unattended), and picks a curated set of public indexers unless
    `PROWLARR_INDEXERS` says otherwise (see `.env.example`). It's safe to
    re-run — every step checks current state first and skips what's already
    configured. Requires `python3` with the `PyYAML` package (`pip install
