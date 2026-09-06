@@ -25,7 +25,7 @@ cin() { local container="$1"; shift; docker exec "$container" curl -s "$@"; }
 
 # Poll COMMAND (a command and its args) every 3s, logging DESC, until it
 # exits 0 or TIMEOUT seconds pass. Warns and returns 1 on timeout. Shared by
-# wait_for_http/wait_for_jellyseerr/wait_for_file so the poll/timeout logic
+# wait_for_http/wait_for_seerr/wait_for_file so the poll/timeout logic
 # exists in one place.
 _poll_until() {
   local desc="$1" timeout="$2"; shift 2
@@ -42,10 +42,10 @@ wait_for_http() {
   _poll_until "$desc" "$timeout" docker exec "$container" curl -sf "$@" "$url"
 }
 
-# jellyseerr's image has no curl, so check it by relaying through sonarr (same docker network).
-wait_for_jellyseerr() {
+# seerr's image has no curl, so check it by relaying through sonarr (same docker network).
+wait_for_seerr() {
   local timeout="${1:-120}"
-  _poll_until "Jellyseerr" "$timeout" cin sonarr -sf "http://jellyseerr:$STACK_SERVICES_JELLYSEERR_PORT/api/v1/status"
+  _poll_until "Seerr" "$timeout" cin sonarr -sf "http://seerr:$STACK_SERVICES_SEERR_PORT/api/v1/status"
 }
 
 wait_for_file() {
@@ -53,7 +53,28 @@ wait_for_file() {
   _poll_until "$desc" "$timeout" test -s "$path"
 }
 
+# For containers with no HTTP endpoint or config file to poll (e.g. Recyclarr,
+# which is cron-driven), wait until `docker exec` on it succeeds at all.
+wait_for_container() {
+  local desc="$1" container="$2" timeout="${3:-60}"
+  _poll_until "$desc" "$timeout" docker exec "$container" true
+}
+
 servarr_apikey() { grep -oE '<ApiKey>[^<]+' "$1" | cut -d'>' -f2; }
+
+# Some images (Seerr, Recyclarr) run as a fixed non-root UID 1000 with no
+# PUID/PGID support, unlike this stack's LinuxServer-based services. If
+# `docker compose up` auto-creates their bind-mounted config directory
+# (root-owned) before the container's first start, the container can't
+# write to it. Pre-create and chown it so first-run works without manual
+# intervention.
+ensure_owned_by_container_user() {
+  local host_path="$1"
+  mkdir -p "$host_path"
+  [ "$(stat -c %u "$host_path")" = "1000" ] && return
+  docker run --rm -v "$(cd "$host_path" && pwd):/data" alpine chown -R 1000:1000 /data >/dev/null
+  log "Fixed ownership of $host_path (was root-owned from its first bind-mount)"
+}
 
 # Copy local file LOCAL_PATH into CONTAINER at CONTAINER_PATH, then delete
 # the local temp copy. Used for payloads too large/complex for a single -d flag.

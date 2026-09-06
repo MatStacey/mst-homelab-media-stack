@@ -179,6 +179,10 @@ def cmd_prowlarr_indexer_payload(args):
     /api/v1/indexer/schema), stamps in appProfileId and the schema's first
     known base URL, and prints the resulting payload JSON. Exits 1 with
     nothing on stdout if NAME isn't a recognised indexer.
+
+    If --tag-id is given, the indexer is tagged with it - Prowlarr routes an
+    indexer's requests through any indexer proxy (e.g. the Byparr
+    FlareSolverr-compatible proxy) that shares one of its tags.
     """
     indexer_schemas = _load_json_file(args.schema_json)
     matched_schema = next((schema for schema in indexer_schemas if schema["name"] == args.name), None)
@@ -187,6 +191,8 @@ def cmd_prowlarr_indexer_payload(args):
         sys.exit(1)
     payload = json.loads(json.dumps(matched_schema))
     payload["appProfileId"] = args.app_profile_id
+    if args.tag_id is not None:
+        payload["tags"] = [args.tag_id]
     base_url = matched_schema["indexerUrls"][0]
     for payload_field in payload["fields"]:
         if payload_field["name"] == "baseUrl":
@@ -208,10 +214,20 @@ def cmd_indexer_add_succeeded(_args):
     print(YES if "id" in indexer else NO)
 
 
-def cmd_has_application(args):
-    """Print yes/no: does the Prowlarr applications list on stdin include NAME."""
-    applications = _load_stdin_json()
-    print(YES if any(application["name"] == args.name for application in applications) else NO)
+def cmd_has_named_entry(args):
+    """Print yes/no: does a JSON list of {"name": ...} objects on stdin include
+    NAME. Shared by Prowlarr's applications and indexer proxy lists - same
+    shape, same check."""
+    entries = _load_stdin_json()
+    print(YES if any(entry["name"] == args.name for entry in entries) else NO)
+
+
+def cmd_find_tag_id(args):
+    """Print the id of the Prowlarr tag named LABEL from a /api/v1/tag list on
+    stdin, or nothing if no tag with that label exists yet."""
+    tags = _load_stdin_json()
+    matching_tag = next((tag for tag in tags if tag["label"] == args.label), None)
+    print("" if matching_tag is None else matching_tag["id"])
 
 
 def cmd_quality_profile_id(args):
@@ -273,10 +289,27 @@ def cmd_has_jellyfin_library(args):
     print(YES if any(args.path in library["Locations"] for library in virtual_folders) else NO)
 
 
-def cmd_has_jellyseerr_app(args):
-    """Print yes/no: does the Jellyseerr settings list on stdin include HOSTNAME."""
+def cmd_jellyfin_api_key(args):
+    """Print the AccessToken of the Jellyfin /Auth/Keys entry named APP_NAME
+    (from a GET /Auth/Keys response on stdin), or nothing if no key with that
+    name exists yet."""
+    keys = _load_stdin_json()
+    matching_key = next((key for key in keys["Items"] if key["AppName"] == args.app_name), None)
+    print("" if matching_key is None else matching_key["AccessToken"])
+
+
+def cmd_has_seerr_app(args):
+    """Print yes/no: does the Seerr settings list on stdin include HOSTNAME."""
     configured_apps = _load_stdin_json()
     print(YES if any(app["hostname"] == args.hostname for app in configured_apps) else NO)
+
+
+def cmd_jellyfin_library_ids(_args):
+    """Print each library's id, one per line, from a Seerr GET
+    /settings/jellyfin/library response (a JSON array) on stdin."""
+    libraries = _load_stdin_json()
+    for library in libraries:
+        print(library["id"])
 
 
 def _read_exclusion_patterns(path):
@@ -309,6 +342,80 @@ def cmd_qbt_exclusions_payload(args):
 def cmd_url_encode(args):
     """Print VALUE, percent-encoded for use in a query string."""
     print(urllib.parse.quote(args.value))
+
+
+def cmd_recyclarr_patch_config(args):
+    """Patch a Recyclarr config-template YAML file in place: fill in the
+    real base_url/api_key for its one Sonarr/Radarr instance.
+
+    Recyclarr's official config templates (from `recyclarr config create
+    --template ...`) ship with extensive explanatory comments about which
+    custom-format groups are enabled - a full YAML parse+dump would silently
+    drop every one of them, so a plain per-line substitution is used
+    instead, keyed on the two placeholder field names the templates always
+    use ("base_url"/"api_key").
+    """
+    with open(args.config_file, encoding="utf-8") as config_file:
+        lines = config_file.readlines()
+
+    def patch_line(line):
+        stripped = line.lstrip()
+        indent = line[: len(line) - len(stripped)]
+        if stripped.startswith("base_url:"):
+            return f"{indent}base_url: {args.base_url}\n"
+        if stripped.startswith("api_key:"):
+            return f"{indent}api_key: {args.api_key}\n"
+        return line
+
+    with open(args.config_file, "w", encoding="utf-8") as config_file:
+        config_file.writelines(patch_line(line) for line in lines)
+
+
+# (internal key, display name, dashboard-icons filename, description, extra
+# widget fields) for every service Homepage gets a tile for. The Docker
+# network hostname/port and any credentials come from stdin at generation
+# time (see cmd_homepage_services_config); everything else about the
+# dashboard's one static "Media" group is fixed here.
+_HOMEPAGE_SERVICES = [
+    ("sonarr", "Sonarr", "sonarr.png", "TV show automation", {"type": "sonarr", "enableQueue": True}),
+    ("radarr", "Radarr", "radarr.png", "Movie automation", {"type": "radarr", "enableQueue": True}),
+    ("prowlarr", "Prowlarr", "prowlarr.png", "Indexer manager", {"type": "prowlarr"}),
+    ("bazarr", "Bazarr", "bazarr.png", "Subtitle automation", {"type": "bazarr"}),
+    ("jellyfin", "Jellyfin", "jellyfin.png", "Media server", {"type": "jellyfin", "enableNowPlaying": True}),
+    ("seerr", "Seerr", "seerr.png", "Media request UI", {"type": "seerr"}),
+    ("qbittorrent", "qBittorrent", "qbittorrent.png", "Torrent client", {"type": "qbittorrent", "enableLeechProgress": True}),
+]
+
+
+def cmd_homepage_services_config(_args):
+    """Build Homepage's services.yaml from per-service ports/credentials on
+    stdin - a JSON object keyed by the internal service names in
+    _HOMEPAGE_SERVICES, each value holding "port" plus either "key" or
+    "username"/"password" (see scripts/lib/homepage.sh for exactly what it
+    sends). Generated once on first setup; scripts/lib/homepage.sh skips
+    calling this again once the file exists, so hand edits survive re-runs.
+    """
+    import yaml  # local import: only needed for this subcommand
+
+    service_settings = _load_stdin_json()
+    media_group = []
+    for key, name, icon, description, widget_extra in _HOMEPAGE_SERVICES:
+        settings = service_settings[key]
+        widget = dict(widget_extra)
+        widget["url"] = f"http://{key}:{settings['port']}"
+        if "key" in settings:
+            widget["key"] = settings["key"]
+        if "username" in settings:
+            widget["username"] = settings["username"]
+            widget["password"] = settings["password"]
+        media_group.append({name: {
+            "icon": icon,
+            "href": f"http://{key}.media.lan",
+            "description": description,
+            "widget": widget,
+        }})
+    print("---")
+    yaml.safe_dump([{"Media": media_group}], sys.stdout, sort_keys=False)
 
 
 @dataclass
@@ -349,18 +456,29 @@ SUBCOMMANDS = [
         ("schema_json", {}),
         ("name", {}),
         ("app_profile_id", {"type": int}),
+        ("--tag-id", {"type": int}),
     ]),
     Subcommand("indexer-add-succeeded", cmd_indexer_add_succeeded),
-    Subcommand("has-application", cmd_has_application, arguments=[("name", {})]),
+    Subcommand("has-application", cmd_has_named_entry, arguments=[("name", {})]),
+    Subcommand("has-indexerproxy", cmd_has_named_entry, arguments=[("name", {})]),
+    Subcommand("find-tag-id", cmd_find_tag_id, arguments=[("label", {})]),
     Subcommand("quality-profile-id", cmd_quality_profile_id, arguments=[("preferred_name", {})]),
     Subcommand("bazarr-needs-setup", cmd_bazarr_needs_setup, arguments=[("username", {})]),
     Subcommand("jellyfin-wizard-completed", cmd_jellyfin_wizard_completed),
     Subcommand("extract-token", cmd_extract_token, arguments=[("field", {})]),
     Subcommand("has-jellyfin-library", cmd_has_jellyfin_library, arguments=[("path", {})]),
-    Subcommand("has-jellyseerr-app", cmd_has_jellyseerr_app, arguments=[("hostname", {})]),
+    Subcommand("jellyfin-api-key", cmd_jellyfin_api_key, arguments=[("app_name", {})]),
+    Subcommand("has-seerr-app", cmd_has_seerr_app, arguments=[("hostname", {})]),
+    Subcommand("jellyfin-library-ids", cmd_jellyfin_library_ids),
     Subcommand("qbt-exclusions-configured", cmd_qbt_exclusions_configured, arguments=[("exclusions_file", {})]),
     Subcommand("qbt-exclusions-payload", cmd_qbt_exclusions_payload, arguments=[("exclusions_file", {})]),
     Subcommand("url-encode", cmd_url_encode, arguments=[("value", {})]),
+    Subcommand("recyclarr-patch-config", cmd_recyclarr_patch_config, arguments=[
+        ("config_file", {}),
+        ("base_url", {}),
+        ("api_key", {}),
+    ]),
+    Subcommand("homepage-services-config", cmd_homepage_services_config),
 ]
 
 

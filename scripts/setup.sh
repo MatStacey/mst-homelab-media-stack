@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # First-run configuration for the media stack: brings the stack up, then wires
-# together Sonarr/Radarr/Prowlarr/Bazarr/qBittorrent/Jellyfin/Jellyseerr via
-# their REST APIs (same steps you'd otherwise click through in each web UI).
+# together Sonarr/Radarr/Prowlarr/Bazarr/qBittorrent/Jellyfin/Seerr/Recyclarr/
+# Homepage via their REST APIs (same steps you'd otherwise click through in
+# each web UI).
 #
 # Safe to re-run: every step checks current state first and skips anything
 # already configured.
@@ -48,8 +49,12 @@ source "$LIB_DIR/qbittorrent.sh"
 source "$LIB_DIR/bazarr.sh"
 # shellcheck source=lib/jellyfin.sh
 source "$LIB_DIR/jellyfin.sh"
-# shellcheck source=lib/jellyseerr.sh
-source "$LIB_DIR/jellyseerr.sh"
+# shellcheck source=lib/seerr.sh
+source "$LIB_DIR/seerr.sh"
+# shellcheck source=lib/recyclarr.sh
+source "$LIB_DIR/recyclarr.sh"
+# shellcheck source=lib/homepage.sh
+source "$LIB_DIR/homepage.sh"
 
 # --- credentials: use .env if set, otherwise prompt (never written back to .env) ---
 if [ -z "${ADMIN_USERNAME:-}" ]; then
@@ -66,6 +71,9 @@ case "$ADMIN_USERNAME$ADMIN_PASSWORD" in
 esac
 
 # ---------------------------------------------------------------------------
+ensure_owned_by_container_user config/seerr
+ensure_owned_by_container_user config/recyclarr
+
 log "Bringing up the stack..."
 docker compose up -d
 
@@ -73,11 +81,20 @@ wait_for_file "Sonarr config"   "$STACK_SERVICES_SONARR_CONFIG_FILE"
 wait_for_file "Radarr config"   "$STACK_SERVICES_RADARR_CONFIG_FILE"
 wait_for_file "Prowlarr config" "$STACK_SERVICES_PROWLARR_CONFIG_FILE"
 wait_for_file "Bazarr config"   "$STACK_SERVICES_BAZARR_CONFIG_FILE"
+wait_for_container "Recyclarr" recyclarr
+wait_for_container "Homepage" homepage
 
 SONARR_KEY="$(servarr_apikey "$STACK_SERVICES_SONARR_CONFIG_FILE")"
 RADARR_KEY="$(servarr_apikey "$STACK_SERVICES_RADARR_CONFIG_FILE")"
 PROWLARR_KEY="$(servarr_apikey "$STACK_SERVICES_PROWLARR_CONFIG_FILE")"
 BAZARR_KEY="$(grep -A3 '^auth:' "$STACK_SERVICES_BAZARR_CONFIG_FILE" | grep 'apikey:' | sed -E 's/.*apikey: *//')"
+# Set for real inside configure_jellyfin/configure_seerr (their API keys don't
+# exist until those steps run); initialized here so `set -u` doesn't choke on
+# homepage.sh reading them if either step warns-and-skips instead.
+# shellcheck disable=SC2034  # consumed by lib/homepage.sh's configure_homepage
+JELLYFIN_KEY=""
+# shellcheck disable=SC2034  # consumed by lib/homepage.sh's configure_homepage
+SEERR_KEY=""
 
 wait_for_http "Sonarr API"   sonarr   "http://localhost:$STACK_SERVICES_SONARR_PORT/api/$STACK_SERVICES_SONARR_API_VERSION/system/status?apikey=$SONARR_KEY"
 wait_for_http "Radarr API"   radarr   "http://localhost:$STACK_SERVICES_RADARR_PORT/api/$STACK_SERVICES_RADARR_API_VERSION/system/status?apikey=$RADARR_KEY"
@@ -90,10 +107,13 @@ configure_prowlarr
 configure_qbittorrent
 configure_bazarr
 configure_jellyfin
-configure_jellyseerr
+configure_seerr
+configure_recyclarr
+configure_homepage
 
 log "Done. Services (once your hosts file / DNS resolves *.media.lan to this machine):"
-for h in sonarr radarr prowlarr bazarr jellyfin jellyseerr qbittorrent; do
-  echo "  - http://$h.media.lan"
+for h in sonarr radarr prowlarr bazarr jellyfin seerr qbittorrent homepage; do
+  echo "  - https://$h.media.lan"
 done
+log "First visit will show a certificate warning until you install Caddy's local CA root - see README's TLS notes."
 log "Login for Sonarr/Radarr/Prowlarr/Bazarr/qBittorrent/Jellyfin: $ADMIN_USERNAME / (the password you provided)"
