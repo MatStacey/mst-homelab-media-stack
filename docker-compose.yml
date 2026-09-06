@@ -85,9 +85,13 @@ services:
       # needs its port listed here to stay reachable from other containers.
       - FIREWALL_INPUT_PORTS=8080,9696,8191
       - VPN_PORT_FORWARDING=${VPN_PORT_FORWARDING:-off}
+      # Keeps qBittorrent listening on whatever port the VPN provider just
+      # forwarded (it can rotate over time) - see the hook script for how.
+      - VPN_PORT_FORWARDING_UP_COMMAND=sh /gluetun-port-forward-hook.sh {{PORTS}}
       - TZ=${TZ}
     volumes:
       - ./config/gluetun:/gluetun
+      - ./scripts/gluetun-port-forward-hook.sh:/gluetun-port-forward-hook.sh:ro
     healthcheck:
       test: ["CMD", "/gluetun-entrypoint", "healthcheck"]
       interval: 15s

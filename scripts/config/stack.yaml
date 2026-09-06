@@ -88,3 +88,11 @@ seerr:
 recyclarr:
   sonarr_template: web-1080p
   radarr_template: hd-bluray-web
+
+qbittorrent:
+  # Above qBittorrent's own conservative defaults (3/3/5) so Sonarr/Radarr
+  # grabs run in parallel instead of queueing behind each other - WireGuard's
+  # overhead is low enough that this is safe even when VPN-routed.
+  max_active_downloads: 5
+  max_active_uploads: 5
+  max_active_torrents: 8

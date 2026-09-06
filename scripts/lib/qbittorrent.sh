@@ -92,6 +92,69 @@ _ensure_qbt_save_path() {
   log "qBittorrent: save path set to $STACK_PATHS_DOWNLOADS"
 }
 
+# Raise qBittorrent's active-torrent limits above its own conservative
+# defaults (3 downloads/3 uploads/5 total) so Sonarr/Radarr grabs run in
+# parallel instead of queueing behind each other. Idempotent.
+_ensure_qbt_active_limits() {
+  local base_url="$1" cookies="$2"
+  local prefs current_downloads current_uploads current_torrents
+  prefs="$(curl -s -b "$cookies" "$base_url/api/v2/app/preferences")"
+  current_downloads="$(echo "$prefs" | $PY get-field max_active_downloads)"
+  current_uploads="$(echo "$prefs" | $PY get-field max_active_uploads)"
+  current_torrents="$(echo "$prefs" | $PY get-field max_active_torrents)"
+  if [ "$current_downloads" = "$STACK_QBITTORRENT_MAX_ACTIVE_DOWNLOADS" ] \
+    && [ "$current_uploads" = "$STACK_QBITTORRENT_MAX_ACTIVE_UPLOADS" ] \
+    && [ "$current_torrents" = "$STACK_QBITTORRENT_MAX_ACTIVE_TORRENTS" ]; then
+    log "qBittorrent: active-torrent limits already configured, skipping"
+    return
+  fi
+  curl -s -b "$cookies" -X POST "$base_url/api/v2/app/setPreferences" \
+    --data-urlencode "json={\"max_active_downloads\":$STACK_QBITTORRENT_MAX_ACTIVE_DOWNLOADS,\"max_active_uploads\":$STACK_QBITTORRENT_MAX_ACTIVE_UPLOADS,\"max_active_torrents\":$STACK_QBITTORRENT_MAX_ACTIVE_TORRENTS}" >/dev/null
+  log "qBittorrent: active-torrent limits raised to $STACK_QBITTORRENT_MAX_ACTIVE_DOWNLOADS/$STACK_QBITTORRENT_MAX_ACTIVE_UPLOADS/$STACK_QBITTORRENT_MAX_ACTIVE_TORRENTS (downloads/uploads/total)"
+}
+
+# Let Gluetun's port-forward-sync hook (scripts/gluetun-port-forward-hook.sh,
+# which runs as localhost inside the shared VPN network namespace) update
+# qBittorrent's listening port without needing WebUI credentials. Only
+# affects requests that are genuinely on loopback - LAN/Caddy traffic still
+# arrives over homelab_net and still needs the normal WebUI login. Idempotent.
+_ensure_qbt_bypass_local_auth() {
+  local base_url="$1" cookies="$2"
+  local current
+  current="$(curl -s -b "$cookies" "$base_url/api/v2/app/preferences" | $PY get-field bypass_local_auth)"
+  if [ "$current" = "True" ]; then
+    log "qBittorrent: localhost auth bypass already enabled, skipping"
+    return
+  fi
+  curl -s -b "$cookies" -X POST "$base_url/api/v2/app/setPreferences" \
+    --data-urlencode "json={\"bypass_local_auth\":true}" >/dev/null
+  log "qBittorrent: localhost auth bypass enabled (needed for Gluetun's port-forward sync hook)"
+}
+
+# Match qBittorrent's listening port to Gluetun's current VPN-forwarded port.
+# Gluetun's own port-forward-up-command hook (see docker-compose.yml/
+# scripts/gluetun-port-forward-hook.sh) keeps this in sync going forward, but
+# only fires on the NEXT port change - this closes the gap for whatever port
+# was already forwarded before this script got here. A no-op in novpn mode,
+# or vpn mode without VPN_PORT_FORWARDING=on, since gluetun won't have a
+# forwarded-port file at all.
+_ensure_qbt_listen_port() {
+  local base_url="$1" cookies="$2"
+  local forwarded_port
+  forwarded_port="$(docker exec gluetun cat /tmp/gluetun/forwarded_port 2>/dev/null)" || return
+  [ -n "$forwarded_port" ] || return
+
+  local current_port
+  current_port="$(curl -s -b "$cookies" "$base_url/api/v2/app/preferences" | $PY get-field listen_port)"
+  if [ "$current_port" = "$forwarded_port" ]; then
+    log "qBittorrent: listening port already matches Gluetun's forwarded port ($forwarded_port), skipping"
+    return
+  fi
+  curl -s -b "$cookies" -X POST "$base_url/api/v2/app/setPreferences" \
+    --data-urlencode "json={\"listen_port\":$forwarded_port}" >/dev/null
+  log "qBittorrent: listening port set to Gluetun's forwarded port ($forwarded_port)"
+}
+
 configure_qbittorrent() {
   local base_url="http://localhost:$STACK_SERVICES_QBITTORRENT_PORT"
   log "Configuring qBittorrent..."
@@ -101,6 +164,9 @@ configure_qbittorrent() {
   if _ensure_qbt_login "$base_url" "$cookies"; then
     _configure_qbt_file_exclusions "$base_url" "$cookies"
     _ensure_qbt_save_path "$base_url" "$cookies"
+    _ensure_qbt_active_limits "$base_url" "$cookies"
+    _ensure_qbt_bypass_local_auth "$base_url" "$cookies"
+    _ensure_qbt_listen_port "$base_url" "$cookies"
   fi
 
   rm -f "$cookies"
