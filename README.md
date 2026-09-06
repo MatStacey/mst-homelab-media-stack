@@ -94,9 +94,10 @@ flowchart TB
 | Seerr | Media request UI | `seerr.media.lan` |
 | Byparr | Cloudflare/anti-bot bypass for Prowlarr indexers | — |
 | Recyclarr | Syncs TRaSH Guides quality profiles/custom formats into Sonarr/Radarr | — |
-| Homepage | Dashboard with live widgets for the whole stack | `admin.media.lan` |
+| Homepage | Dashboard with live widgets for the whole stack | `status.media.lan` |
 | Caddy | Reverse proxy / gateway, plus a static landing page | `:80` / `:443` |
 | *(landing page)* | Tile grid linking to every service above | `homepage.media.lan` |
+| Tailscale | Optional remote access over a private mesh network (see Setup step 5) | `<node>.<tailnet>.ts.net` |
 
 All services communicate over an internal `homelab_net` bridge network.
 Caddy is the only intended ingress point; a few services (qBittorrent,
@@ -203,7 +204,7 @@ Jellyfin) also publish ports directly for LAN discovery/native app use.
    kept current on Recyclarr's own daily cron schedule with no further
    help from this script.
 
-   Finally, a Homepage dashboard (`admin.media.lan`) is generated with live
+   Finally, a Homepage dashboard (`status.media.lan`) is generated with live
    widgets for every service above, wired up using the same API keys this
    script already collected. It's only generated once - the file
    (`config/homepage/services.yaml`) is left alone on later runs, so you can
@@ -239,6 +240,51 @@ Jellyfin) also publish ports directly for LAN discovery/native app use.
    credentials from step 3. Your browser will warn about an untrusted
    certificate until you install Caddy's local CA root certificate — see
    TLS below.
+
+5. **Optional: remote access via Tailscale.** Everything above is LAN-only.
+   To reach the stack from anywhere, authorized via your Google (or GitHub/
+   Microsoft) account, without exposing any public ports or DNS:
+
+   - Create a free account at [tailscale.com](https://tailscale.com) if you
+     don't have one, and sign in with Google - this is device-level tailnet
+     membership (only devices you've authorized this way can reach
+     anything below), not per-request app authentication like the
+     OAuth2-Proxy diagram at the top of this README describes - a
+     materially simpler model, well suited to "just let me and my household
+     in from anywhere."
+   - In the admin console, enable **HTTPS Certificates** under *DNS* /
+     *Settings* if not already on - required for the automatic per-node
+     certificates below.
+   - Generate an auth key (*Settings → Keys → Generate auth key* -
+     reusable, not ephemeral, is easiest) and add it as a new line in
+     `~/secrets/homelab.sh` (the same file used for
+     `ADMIN_USERNAME`/`ADMIN_PASSWORD` - see step 3):
+     ```
+     TS_AUTHKEY=tskey-...
+     ```
+   - Bring it up: `docker compose up -d tailscale` (or a full
+     `./scripts/setup.sh` run, which exports `TS_AUTHKEY` for you). If no
+     key was found, `docker logs tailscale` prints a one-time login URL
+     instead - open it and sign in.
+   - `tailscale/serve-config.json` declares what's reachable and gets a
+     real, publicly-trusted certificate automatically (Tailscale's
+     `${TS_CERT_DOMAIN}` placeholder resolves to this node's own MagicDNS
+     name) - by default the landing page, Jellyfin, Seerr, qBittorrent, and
+     the Homepage status dashboard, matching the LAN scope above. Edit it
+     to add or remove services; each needs its own port (path-based routing
+     on one port doesn't work for apps like Homepage that hardcode
+     root-relative asset paths - see the landing-page/status-dashboard split
+     above for why).
+   - Once authenticated, find your node's MagicDNS name (`docker exec
+     tailscale tailscale status`, or the admin console) and add it to
+     `HOMEPAGE_ALLOWED_HOSTS` in `docker-compose.yml` (comma-separated),
+     then `docker compose up -d homepage` once - Homepage rejects requests
+     whose `Host` header isn't in that list, and this hostname can't be
+     known ahead of time.
+   - From any device signed into the same tailnet:
+     `https://media-stack.<your-tailnet>.ts.net` (landing page) and
+     `:8096`/`:5055`/`:8080`/`:3000` for the rest - no certificate warnings,
+     no DNS setup, works the same on cellular data as at home.
 
 ## Notes
 

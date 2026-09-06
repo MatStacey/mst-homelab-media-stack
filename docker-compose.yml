@@ -387,7 +387,10 @@ services:
       - PUID=1000
       - PGID=1000
       - TZ=${TZ}
-      - HOMEPAGE_ALLOWED_HOSTS=admin.media.lan
+      # Comma-separated. Add your Tailscale MagicDNS name here too once known
+      # (e.g. media-stack.<tailnet>.ts.net) if exposing this via Tailscale Serve -
+      # Homepage rejects requests whose Host header isn't in this list.
+      - HOMEPAGE_ALLOWED_HOSTS=status.media.lan
     volumes:
       - ./config/homepage:/app/config
     healthcheck:
@@ -395,6 +398,43 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+    logging: *default-logging
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
+  tailscale:
+    # Remote access without exposing anything to the public internet: joins
+    # a private Tailscale mesh network (WireGuard-based) so only devices
+    # signed into your tailnet (Google/GitHub/Microsoft SSO at the account
+    # level) can reach anything below - no public ports, no public DNS, and
+    # Tailscale issues real, publicly-trusted HTTPS certs for its own
+    # MagicDNS names, unlike Caddy's local_certs above. tailscale/serve-config.json
+    # declares which services are reachable this way; see README's Tailscale
+    # notes for one-time account setup (auth key, enabling HTTPS Certificates).
+    image: tailscale/tailscale:latest
+    container_name: tailscale
+    hostname: media-stack
+    networks:
+      - homelab_net
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    environment:
+      # Empty is fine - Tailscale falls back to printing a one-time login
+      # URL in its own logs instead. Only ever set via scripts/setup.sh
+      # exporting it from ~/secrets/homelab.sh, never stored in .env - see
+      # README.
+      - TS_AUTHKEY=${TS_AUTHKEY:-}
+      - TS_STATE_DIR=/var/lib/tailscale
+      - TS_AUTH_ONCE=true
+      - TS_SERVE_CONFIG=/config/serve-config.json
+    volumes:
+      - ./config/tailscale:/var/lib/tailscale
+      # Mount the directory, not the file directly - Tailscale's own docs
+      # note a single-file bind mount breaks its change-detection for this.
+      - ./tailscale:/config:ro
     logging: *default-logging
     security_opt:
       - no-new-privileges:true

@@ -62,6 +62,11 @@ if [ -f "$HOME/secrets/homelab.sh" ]; then
   # shellcheck disable=SC1091
   source "$HOME/secrets/homelab.sh"
 fi
+# Only TS_AUTHKEY needs to reach docker compose's own environment (for
+# ${TS_AUTHKEY} substitution in docker-compose.yml) - ADMIN_USERNAME/PASSWORD
+# stay unexported since this script uses them directly, never via a child
+# process's environment.
+[ -n "${TS_AUTHKEY:-}" ] && export TS_AUTHKEY
 if [ -z "${ADMIN_USERNAME:-}" ]; then
   read -rp "Admin username to use for all service logins: " ADMIN_USERNAME
 fi
@@ -122,7 +127,7 @@ configure_homepage
 
 log "Done. Services (once your hosts file / DNS resolves *.media.lan to this machine):"
 echo "  - https://homepage.media.lan (start here - a tile per service)"
-for h in sonarr radarr prowlarr bazarr jellyfin seerr qbittorrent admin; do
+for h in sonarr radarr prowlarr bazarr jellyfin seerr qbittorrent status; do
   echo "  - https://$h.media.lan"
 done
 log "First visit will show a certificate warning until you install Caddy's local CA root - see README's TLS notes."
