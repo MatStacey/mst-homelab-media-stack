@@ -53,3 +53,13 @@ homepage.media.lan {
 admin.media.lan {
 	reverse_proxy homepage:3000
 }
+
+# Same landing page, reachable by raw IP with no hostname/DNS/certificate
+# needed - for devices that can't resolve *.media.lan (see README's LAN
+# access notes) or don't handle the local CA. Plain HTTP, no TLS: an IP
+# address can't get a real per-hostname cert the way local_certs issues one
+# above, and Caddy's automatic HTTPS would just redirect-then-fail for it.
+:8888 {
+	root * /srv/landing
+	file_server
+}

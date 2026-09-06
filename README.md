@@ -228,7 +228,12 @@ Jellyfin) also publish ports directly for LAN discovery/native app use.
   New-NetFirewallRule -DisplayName "Homelab - Jellyfin Discovery" -Direction Inbound -Protocol UDP -LocalPort 7359 -Profile Private -Action Allow
   New-NetFirewallRule -DisplayName "Homelab - Seerr" -Direction Inbound -Protocol TCP -LocalPort 5055 -Profile Private -Action Allow
   New-NetFirewallRule -DisplayName "Homelab - qBittorrent WebUI" -Direction Inbound -Protocol TCP -LocalPort 8080 -Profile Private -Action Allow
+  New-NetFirewallRule -DisplayName "Homelab - Landing Page" -Direction Inbound -Protocol TCP -LocalPort 8888 -Profile Private -Action Allow
   ```
+  The landing page itself (normally `homepage.media.lan`, see above) is also
+  reachable this way at `http://<lan-ip>:8888` - plain HTTP on its own port,
+  no hostname/DNS/certificate needed, for devices that can't resolve
+  `*.media.lan` or don't accept the local CA.
   Test from an *actual other device* (phone browser, the TV app), not from
   this machine testing its own LAN IP — Windows commonly fails to "hairpin"
   a connection back to its own external address, which looks identical to a

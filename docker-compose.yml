@@ -408,6 +408,7 @@ services:
     ports:
       - "80:80"
       - "443:443"
+      - "8888:8888"   # landing page over plain HTTP, no hostname/DNS/cert needed
     volumes:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - ./caddy/site:/srv/landing:ro
