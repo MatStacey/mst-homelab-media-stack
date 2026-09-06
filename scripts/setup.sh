@@ -121,7 +121,8 @@ configure_recyclarr
 configure_homepage
 
 log "Done. Services (once your hosts file / DNS resolves *.media.lan to this machine):"
-for h in sonarr radarr prowlarr bazarr jellyfin seerr qbittorrent homepage; do
+echo "  - https://homepage.media.lan (start here - a tile per service)"
+for h in sonarr radarr prowlarr bazarr jellyfin seerr qbittorrent admin; do
   echo "  - https://$h.media.lan"
 done
 log "First visit will show a certificate warning until you install Caddy's local CA root - see README's TLS notes."

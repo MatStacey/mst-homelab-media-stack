@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Media Stack</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #0f1420;
+    --card: #171d2c;
+    --card-border: #262f45;
+    --text: #e8ebf3;
+    --text-dim: #9aa4bd;
+    --accent: #6c8cff;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #f4f6fb;
+      --card: #ffffff;
+      --card-border: #e2e6f0;
+      --text: #1a2036;
+      --text-dim: #5b6480;
+      --accent: #3f5fe0;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    padding: 48px 24px 64px;
+  }
+  header {
+    max-width: 960px;
+    margin: 0 auto 40px;
+    text-align: center;
+  }
+  h1 {
+    font-size: 1.9rem;
+    margin: 0 0 8px;
+    letter-spacing: -0.01em;
+  }
+  header p {
+    margin: 0;
+    color: var(--text-dim);
+    font-size: 0.95rem;
+  }
+  main {
+    max-width: 960px;
+    margin: 0 auto;
+  }
+  section { margin-bottom: 40px; }
+  h2 {
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-dim);
+    margin: 0 0 14px;
+    font-weight: 600;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 14px;
+  }
+  a.tile {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 16px;
+    border-radius: 14px;
+    background: var(--card);
+    border: 1px solid var(--card-border);
+    text-decoration: none;
+    color: inherit;
+    transition: transform 0.12s ease, border-color 0.12s ease;
+  }
+  a.tile:hover {
+    transform: translateY(-2px);
+    border-color: var(--accent);
+  }
+  .icon {
+    flex: none;
+    width: 42px;
+    height: 42px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: #fff;
+  }
+  .tile-text { min-width: 0; }
+  .tile-name {
+    font-weight: 600;
+    font-size: 0.98rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .tile-desc {
+    font-size: 0.8rem;
+    color: var(--text-dim);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+</style>
+</head>
+<body>
+  <header>
+    <h1>Media Stack</h1>
+    <p>Pick a service below.</p>
+  </header>
+  <main>
+    <section>
+      <h2>Watch &amp; Request</h2>
+      <div class="grid">
+        <a class="tile" href="https://jellyfin.media.lan">
+          <div class="icon" style="background:#00a4dc">JF</div>
+          <div class="tile-text">
+            <div class="tile-name">Jellyfin</div>
+            <div class="tile-desc">Watch movies &amp; TV</div>
+          </div>
+        </a>
+        <a class="tile" href="https://seerr.media.lan">
+          <div class="icon" style="background:#8b5cf6">SR</div>
+          <div class="tile-text">
+            <div class="tile-name">Seerr</div>
+            <div class="tile-desc">Request new movies &amp; TV</div>
+          </div>
+        </a>
+      </div>
+    </section>
+
+    <section>
+      <h2>Manage</h2>
+      <div class="grid">
+        <a class="tile" href="https://sonarr.media.lan">
+          <div class="icon" style="background:#35c5f4">SO</div>
+          <div class="tile-text">
+            <div class="tile-name">Sonarr</div>
+            <div class="tile-desc">TV show automation</div>
+          </div>
+        </a>
+        <a class="tile" href="https://radarr.media.lan">
+          <div class="icon" style="background:#ffc230">RA</div>
+          <div class="tile-text">
+            <div class="tile-name">Radarr</div>
+            <div class="tile-desc">Movie automation</div>
+          </div>
+        </a>
+        <a class="tile" href="https://prowlarr.media.lan">
+          <div class="icon" style="background:#f2612c">PR</div>
+          <div class="tile-text">
+            <div class="tile-name">Prowlarr</div>
+            <div class="tile-desc">Indexer manager</div>
+          </div>
+        </a>
+        <a class="tile" href="https://bazarr.media.lan">
+          <div class="icon" style="background:#9146ff">BZ</div>
+          <div class="tile-text">
+            <div class="tile-name">Bazarr</div>
+            <div class="tile-desc">Subtitle automation</div>
+          </div>
+        </a>
+        <a class="tile" href="https://qbittorrent.media.lan">
+          <div class="icon" style="background:#2e6da4">QB</div>
+          <div class="tile-text">
+            <div class="tile-name">qBittorrent</div>
+            <div class="tile-desc">Torrent client</div>
+          </div>
+        </a>
+        <a class="tile" href="https://admin.media.lan">
+          <div class="icon" style="background:#4b5566">AD</div>
+          <div class="tile-text">
+            <div class="tile-name">Admin Dashboard</div>
+            <div class="tile-desc">Live stats for everything</div>
+          </div>
+        </a>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

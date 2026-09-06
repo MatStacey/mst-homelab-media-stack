@@ -19,8 +19,9 @@ Gluetun for qBittorrent, Prowlarr, and Byparr.
 | Seerr | Media request UI | `seerr.media.lan` |
 | Byparr | Cloudflare/anti-bot bypass for Prowlarr indexers | — |
 | Recyclarr | Syncs TRaSH Guides quality profiles/custom formats into Sonarr/Radarr | — |
-| Homepage | Dashboard with live widgets for the whole stack | `homepage.media.lan` |
-| Caddy | Reverse proxy / gateway | `:80` / `:443` |
+| Homepage | Dashboard with live widgets for the whole stack | `admin.media.lan` |
+| Caddy | Reverse proxy / gateway, plus a static landing page | `:80` / `:443` |
+| *(landing page)* | Tile grid linking to every service above | `homepage.media.lan` |
 
 All services communicate over an internal `homelab_net` bridge network.
 Caddy is the only intended ingress point; a few services (qBittorrent,
@@ -127,11 +128,16 @@ Jellyfin) also publish ports directly for LAN discovery/native app use.
    kept current on Recyclarr's own daily cron schedule with no further
    help from this script.
 
-   Finally, a Homepage dashboard (`homepage.media.lan`) is generated with
-   live widgets for every service above, wired up using the same API keys
-   this script already collected. It's only generated once - the file
-   (`config/homepage/services.yaml`) is left alone on later runs, so you
-   can freely rearrange it by hand afterward.
+   Finally, a Homepage dashboard (`admin.media.lan`) is generated with live
+   widgets for every service above, wired up using the same API keys this
+   script already collected. It's only generated once - the file
+   (`config/homepage/services.yaml`) is left alone on later runs, so you can
+   freely rearrange it by hand afterward. `homepage.media.lan` itself is a
+   separate, simple static landing page (`caddy/site/index.html`) with a
+   tile per service, meant as the everyday starting point for anyone on the
+   LAN - Homepage's own dashboard app can't be served under a subpath of
+   the same domain (a known upstream limitation), hence the two different
+   addresses.
 
    The script is split by service for easy maintenance:
    - `scripts/config/stack.yaml` — ports, paths, default indexers, category
@@ -153,9 +159,11 @@ Jellyfin) also publish ports directly for LAN discovery/native app use.
 
 4. Add hosts-file entries (or LAN DNS records) pointing `*.media.lan` at
    this machine so Caddy's reverse proxy addresses resolve, then visit
-   `https://sonarr.media.lan` etc. and log in with the admin credentials
-   from step 3. Your browser will warn about an untrusted certificate until
-   you install Caddy's local CA root certificate — see TLS below.
+   `https://homepage.media.lan` to get a tile for every service (or go
+   straight to `https://sonarr.media.lan` etc.) and log in with the admin
+   credentials from step 3. Your browser will warn about an untrusted
+   certificate until you install Caddy's local CA root certificate — see
+   TLS below.
 
 ## Notes
 

@@ -39,6 +39,17 @@ qbittorrent.media.lan {
 	reverse_proxy qbittorrent:8080
 }
 
+# Static landing page - a simple tile grid linking to every service, so
+# people who just want to watch/request something don't need to know each
+# service's own address. The full live-stats dashboard (what used to be
+# here) moved to admin.media.lan - Homepage (a Next.js app) doesn't support
+# being served under a subpath like homepage.media.lan/admin, only its own
+# domain root, so it needed a separate hostname rather than a path.
 homepage.media.lan {
+	root * /srv/landing
+	file_server
+}
+
+admin.media.lan {
 	reverse_proxy homepage:3000
 }

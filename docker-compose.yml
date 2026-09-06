@@ -385,7 +385,7 @@ services:
       - PUID=1000
       - PGID=1000
       - TZ=${TZ}
-      - HOMEPAGE_ALLOWED_HOSTS=homepage.media.lan
+      - HOMEPAGE_ALLOWED_HOSTS=admin.media.lan
     volumes:
       - ./config/homepage:/app/config
     healthcheck:
@@ -408,6 +408,7 @@ services:
       - "443:443"
     volumes:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./caddy/site:/srv/landing:ro
       - ./config/caddy/data:/data
       - ./config/caddy/config:/config
     healthcheck:
