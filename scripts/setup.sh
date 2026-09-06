@@ -56,7 +56,12 @@ source "$LIB_DIR/recyclarr.sh"
 # shellcheck source=lib/homepage.sh
 source "$LIB_DIR/homepage.sh"
 
-# --- credentials: use .env if set, otherwise prompt (never written back to .env) ---
+# --- credentials: use .env if set, then ~/secrets/homelab.sh if present,
+# otherwise prompt (never written back to .env or the secrets file) ---
+if [ -f "$HOME/secrets/homelab.sh" ]; then
+  # shellcheck disable=SC1091
+  source "$HOME/secrets/homelab.sh"
+fi
 if [ -z "${ADMIN_USERNAME:-}" ]; then
   read -rp "Admin username to use for all service logins: " ADMIN_USERNAME
 fi
