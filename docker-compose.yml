@@ -1,3 +1,12 @@
+# Caps every container's stdout/stderr log growth - Docker's default json-file
+# driver has no size limit otherwise, so logs can grow unbounded over a long
+# uptime. Applied to every service below via "logging: *default-logging".
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 networks:
   homelab_net:
     driver: bridge
@@ -17,7 +26,7 @@ services:
   # mode (Caddy, Sonarr, Radarr, Bazarr).
 
   qbittorrent:
-    image: lscr.io/linuxserver/qbittorrent:latest
+    image: lscr.io/linuxserver/qbittorrent:5.2.3_v2.0.14-ls474
     container_name: qbittorrent
     profiles: ["novpn"]
     networks:
@@ -39,12 +48,18 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+    logging: *default-logging
     security_opt:
       - no-new-privileges:true
     restart: unless-stopped
 
   gluetun:
-    image: qmcgaw/gluetun:latest
+    # Gluetun publishes no version tag matching its "latest" builds (its own
+    # startup log literally reports "Running version latest"), so pinning by
+    # tag would risk silently pinning to an older release than what's
+    # actually been running and tested here - pinned by digest instead,
+    # which is guaranteed to match exactly.
+    image: qmcgaw/gluetun@sha256:89e3cbe22e0d6f09a18d3e86269392fd9f7f08e8991040741e577f8f127cdfe4
     container_name: gluetun
     profiles: ["vpn"]
     cap_add:
@@ -97,12 +112,13 @@ services:
       interval: 15s
       timeout: 10s
       retries: 3
+    logging: *default-logging
     security_opt:
       - no-new-privileges:true
     restart: unless-stopped
 
   qbittorrent-vpn:
-    image: lscr.io/linuxserver/qbittorrent:latest
+    image: lscr.io/linuxserver/qbittorrent:5.2.3_v2.0.14-ls474
     container_name: qbittorrent-vpn
     profiles: ["vpn"]
     network_mode: "service:gluetun"
@@ -117,12 +133,18 @@ services:
     volumes:
       - ./config/qbittorrent:/config
       - /opt/media-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    logging: *default-logging
     security_opt:
       - no-new-privileges:true
     restart: unless-stopped
 
   prowlarr:
-    image: lscr.io/linuxserver/prowlarr:latest
+    image: lscr.io/linuxserver/prowlarr:2.5.2.5491-ls158
     container_name: prowlarr
     profiles: ["novpn"]
     networks:
@@ -138,12 +160,13 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+    logging: *default-logging
     security_opt:
       - no-new-privileges:true
     restart: unless-stopped
 
   prowlarr-vpn:
-    image: lscr.io/linuxserver/prowlarr:latest
+    image: lscr.io/linuxserver/prowlarr:2.5.2.5491-ls158
     container_name: prowlarr
     profiles: ["vpn"]
     network_mode: "service:gluetun"
@@ -156,6 +179,12 @@ services:
       - TZ=${TZ}
     volumes:
       - ./config/prowlarr:/config
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9696/ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    logging: *default-logging
     security_opt:
       - no-new-privileges:true
     restart: unless-stopped
@@ -166,7 +195,10 @@ services:
     # results. Drop-in replacement for the now-non-functional FlareSolverr -
     # same /v1 request API and default port (8191), so Prowlarr's built-in
     # "FlareSolverr" proxy type just needs pointing at this container.
-    image: ghcr.io/thephaseless/byparr:latest
+    # No semver tags are published - pinned to the exact commit-sha tag
+    # matching the image currently running (its own version label), which
+    # is the most precise reference available for this project.
+    image: ghcr.io/thephaseless/byparr:cb2a862386e92f141e8aa3b58f8532ef2fc36ed0-amd64
     container_name: byparr
     profiles: ["novpn"]
     networks:
@@ -176,24 +208,31 @@ services:
       interval: 30s
       timeout: 15s
       retries: 3
+    logging: *default-logging
     security_opt:
       - no-new-privileges:true
     restart: unless-stopped
 
   byparr-vpn:
-    image: ghcr.io/thephaseless/byparr:latest
+    image: ghcr.io/thephaseless/byparr:cb2a862386e92f141e8aa3b58f8532ef2fc36ed0-amd64
     container_name: byparr
     profiles: ["vpn"]
     network_mode: "service:gluetun"
     depends_on:
       gluetun:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8191/health"]
+      interval: 30s
+      timeout: 15s
+      retries: 3
+    logging: *default-logging
     security_opt:
       - no-new-privileges:true
     restart: unless-stopped
 
   sonarr:
-    image: lscr.io/linuxserver/sonarr:latest
+    image: lscr.io/linuxserver/sonarr:4.0.19.2979-ls322
     container_name: sonarr
     networks:
       - homelab_net
@@ -209,12 +248,13 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+    logging: *default-logging
     security_opt:
       - no-new-privileges:true
     restart: unless-stopped
 
   radarr:
-    image: lscr.io/linuxserver/radarr:latest
+    image: lscr.io/linuxserver/radarr:6.3.0.10514-ls314
     container_name: radarr
     networks:
       - homelab_net
@@ -230,6 +270,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+    logging: *default-logging
     security_opt:
       - no-new-privileges:true
     restart: unless-stopped
@@ -257,12 +298,13 @@ services:
       interval: 5m
       timeout: 10s
       retries: 3
+    logging: *default-logging
     security_opt:
       - no-new-privileges:true
     restart: unless-stopped
 
   bazarr:
-    image: lscr.io/linuxserver/bazarr:latest
+    image: lscr.io/linuxserver/bazarr:v1.6.0-ls362
     container_name: bazarr
     networks:
       - homelab_net
@@ -273,12 +315,18 @@ services:
     volumes:
       - ./config/bazarr:/config
       - /opt/media-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6767/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    logging: *default-logging
     security_opt:
       - no-new-privileges:true
     restart: unless-stopped
 
   jellyfin:
-    image: jellyfin/jellyfin:latest
+    image: jellyfin/jellyfin:10.11.11
     container_name: jellyfin
     user: "1000:1000"
     networks:
@@ -293,6 +341,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+    logging: *default-logging
     security_opt:
       - no-new-privileges:true
     restart: unless-stopped
@@ -302,7 +351,7 @@ services:
     # of 2026) - runs as a fixed non-root "node" user (UID 1000) baked into
     # the image, so no PUID/PGID env vars, and needs init:true since it no
     # longer bundles its own init process.
-    image: ghcr.io/seerr-team/seerr:latest
+    image: ghcr.io/seerr-team/seerr:v3.4.1
     container_name: seerr
     init: true
     networks:
@@ -316,6 +365,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+    logging: *default-logging
     security_opt:
       - no-new-privileges:true
     restart: unless-stopped
@@ -327,7 +377,7 @@ services:
     # rearrange things; setup.sh won't overwrite it once it exists. No
     # Docker socket is mounted for auto-discovery, to avoid docker.sock as
     # an attack surface - static config covers the whole stack instead.
-    image: ghcr.io/gethomepage/homepage:latest
+    image: ghcr.io/gethomepage/homepage:v2.2.0
     container_name: homepage
     networks:
       - homelab_net
@@ -343,12 +393,13 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+    logging: *default-logging
     security_opt:
       - no-new-privileges:true
     restart: unless-stopped
 
   caddy:
-    image: caddy:latest
+    image: caddy:2.11.4
     container_name: caddy
     networks:
       - homelab_net
@@ -359,6 +410,17 @@ services:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - ./config/caddy/data:/data
       - ./config/caddy/config:/config
+    healthcheck:
+      # Only checks Caddy's own HTTP listener answers - deliberately not one
+      # of the proxied *.media.lan sites, so Caddy's health doesn't depend on
+      # any backend service being up. The 308 redirect to HTTPS (no cert for
+      # bare "localhost") is the expected healthy response; curl -f only
+      # fails on 4xx/5xx, so it passes without needing to follow it.
+      test: ["CMD", "curl", "-f", "http://localhost:80/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    logging: *default-logging
     security_opt:
       - no-new-privileges:true
     restart: unless-stopped
