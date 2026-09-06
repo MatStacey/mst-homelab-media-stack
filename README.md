@@ -202,8 +202,10 @@ Jellyfin) also publish ports directly for LAN discovery/native app use.
     *Authorities* → *Import*.
 
   Some devices — smart TVs, some mobile apps — can't accept a custom CA at
-  all. For those, keep using qBittorrent's/Jellyfin's own published ports
-  directly (`http://<lan-ip>:8080`, `:8096`) instead of the Caddy route.
+  all. For those, keep using qBittorrent's/Jellyfin's/Seerr's own published
+  ports directly (`http://<lan-ip>:8080`, `:8096`, `:5055`) instead of the
+  Caddy route - e.g. the official Jellyfin app on an Android TV, which
+  doesn't use the OS's user-added CA trust store the way a browser does.
 
   If you'd rather have genuinely publicly-trusted certificates with no
   per-device setup, and you own a domain on a DNS provider Caddy supports,
@@ -211,3 +213,23 @@ Jellyfin) also publish ports directly for LAN discovery/native app use.
   [DNS-challenge provider module](https://caddyserver.com/docs/automatic-https#dns-challenge)
   instead — the domain never needs to be internet-reachable, it's only used
   to prove ownership for the certificate.
+
+- **LAN access from other devices (phones, smart TVs, etc.)**: those direct
+  ports need to be reachable from the rest of your LAN, not just this
+  machine. If this host runs under **WSL2 with mirrored networking**
+  (`networkingMode=mirrored` in `.wslconfig`) - which shares the Windows
+  host's real IP instead of a separate NAT'd one - Docker's published ports
+  are already on that shared IP, but Windows Firewall still blocks other
+  devices from reaching them until you add inbound allow rules (run as
+  Administrator; scoped to the `Private` profile so nothing gets exposed via
+  a VPN's own virtual adapter, which Windows typically marks `Public`):
+  ```powershell
+  New-NetFirewallRule -DisplayName "Homelab - Jellyfin" -Direction Inbound -Protocol TCP -LocalPort 8096 -Profile Private -Action Allow
+  New-NetFirewallRule -DisplayName "Homelab - Jellyfin Discovery" -Direction Inbound -Protocol UDP -LocalPort 7359 -Profile Private -Action Allow
+  New-NetFirewallRule -DisplayName "Homelab - Seerr" -Direction Inbound -Protocol TCP -LocalPort 5055 -Profile Private -Action Allow
+  New-NetFirewallRule -DisplayName "Homelab - qBittorrent WebUI" -Direction Inbound -Protocol TCP -LocalPort 8080 -Profile Private -Action Allow
+  ```
+  Test from an *actual other device* (phone browser, the TV app), not from
+  this machine testing its own LAN IP — Windows commonly fails to "hairpin"
+  a connection back to its own external address, which looks identical to a
+  real block but isn't one.

@@ -356,6 +356,8 @@ services:
     init: true
     networks:
       - homelab_net
+    ports:
+      - "5055:5055"   # published directly too — LAN devices that don't go through Caddy
     environment:
       - TZ=${TZ}
     volumes:
