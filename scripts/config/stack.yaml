@@ -70,6 +70,11 @@ prowlarr:
   # (typically Cloudflare-protected sites returning a challenge page).
   flaresolverr_tag: flaresolverr
   flaresolverr_request_timeout: 60
+  # Floor applied to every Sonarr/Radarr indexer's own "Minimum Seeders"
+  # field (not a Prowlarr-side setting, so this survives Prowlarr's
+  # ApplicationIndexerSync) - filters out just-published bait/fake torrents
+  # with no real swarm behind them yet, on top of trusted-release scoring.
+  minimum_seeders: 5
 
 jellyfin:
   server_name: Jellyfin
@@ -78,16 +83,25 @@ jellyfin:
   preferred_metadata_language: en
 
 seerr:
-  # Falls back to the first available profile if this name isn't found.
-  preferred_quality_profile: "HD - 720p/1080p"
+  # Falls back to the first available profile if the name isn't found. Both
+  # of these must be Recyclarr-managed profiles (see `recyclarr:` below) -
+  # Radarr/Sonarr's own stock built-in profiles carry no custom-format
+  # scoring at all, so pointing Seerr at one of those means every grab picks
+  # by resolution match alone, with no trusted-release/fake-release signal.
+  preferred_quality_profile_radarr: "WEBDL 2160p (Combined)"
+  preferred_quality_profile_sonarr: "WEB-1080p"
 
 # TRaSH Guides config template IDs (see https://github.com/recyclarr/config-templates)
-# Recyclarr syncs into Sonarr/Radarr. These pick the non-4K "WEB-1080p" tier - the
-# guides' standard general-purpose recommendation. Swap for a different template id
-# (4K, remux, anime, etc.) to change quality tiers.
+# Recyclarr syncs into Sonarr/Radarr. sonarr_template picks the non-4K
+# "WEB-1080p" tier - the guides' standard general-purpose recommendation.
+# radarr_templates is a list: every named profile gets created/kept in sync,
+# so Seerr (or you, manually) can pick per-request. radarr_custom_templates
+# lists templates with no official recyclarr scaffold, each seeded from
+# scripts/config/recyclarr-<name>.yml instead - see scripts/lib/recyclarr.sh.
 recyclarr:
   sonarr_template: web-1080p
-  radarr_template: hd-bluray-web
+  radarr_templates: [hd-bluray-web, radarr-remux-2160p-combined]
+  radarr_custom_templates: [hybrid-1080p-4k-web]
 
 servarr:
   # Sonarr/Radarr/Prowlarr's steady-state log level (Settings > General >

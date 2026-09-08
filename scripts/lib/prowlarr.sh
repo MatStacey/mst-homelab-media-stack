@@ -150,4 +150,7 @@ configure_prowlarr() {
   _configure_prowlarr_app "Radarr" "Radarr" "RadarrSettings" "http://radarr:$STACK_SERVICES_RADARR_PORT" "$RADARR_KEY" "[$STACK_PROWLARR_SYNC_CATEGORIES_RADARR]"
   cin prowlarr -X POST -H "X-Api-Key: $PROWLARR_KEY" -H "Content-Type: application/json" \
     "http://localhost:$STACK_SERVICES_PROWLARR_PORT/api/v1/command" -d '{"name":"ApplicationIndexerSync"}' >/dev/null
+
+  configure_servarr_minimum_seeders "Sonarr" sonarr "$STACK_SERVICES_SONARR_PORT" "$STACK_SERVICES_SONARR_API_VERSION" "$SONARR_KEY"
+  configure_servarr_minimum_seeders "Radarr" radarr "$STACK_SERVICES_RADARR_PORT" "$STACK_SERVICES_RADARR_API_VERSION" "$RADARR_KEY"
 }

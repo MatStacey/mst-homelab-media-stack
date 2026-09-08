@@ -240,15 +240,52 @@ def cmd_find_tag_id(args):
     print("" if matching_tag is None else matching_tag["id"])
 
 
-def cmd_quality_profile_id(args):
-    """Pick a quality profile id from a Sonarr/Radarr qualityprofile list (stdin).
+def _pick_quality_profile(quality_profiles, preferred_name):
+    """Prefer the profile named PREFERRED_NAME if present, otherwise fall
+    back to the first profile in the list (every *arr install ships with at
+    least one). Shared by cmd_quality_profile_id/cmd_quality_profile_name so
+    a caller resolving both for the same list can't have them disagree."""
+    matching_profiles = [profile for profile in quality_profiles if profile["name"] == preferred_name]
+    return (matching_profiles or quality_profiles)[0]
 
-    Prefers PREFERRED_NAME if present, otherwise falls back to the first
-    profile in the list (every *arr install ships with at least one).
-    """
-    quality_profiles = _load_stdin_json()
-    matching_profiles = [profile for profile in quality_profiles if profile["name"] == args.preferred_name]
-    print((matching_profiles or quality_profiles)[0]["id"])
+
+def cmd_quality_profile_id(args):
+    """Print the id of the picked quality profile from a Sonarr/Radarr
+    qualityprofile list (stdin) - see _pick_quality_profile."""
+    print(_pick_quality_profile(_load_stdin_json(), args.preferred_name)["id"])
+
+
+def cmd_quality_profile_name(args):
+    """Print the name of the picked quality profile from a Sonarr/Radarr
+    qualityprofile list (stdin) - see _pick_quality_profile. Seerr's
+    settings API requires both activeProfileId and activeProfileName in its
+    update payload, and they must refer to the same profile - always derive
+    both from one call to this and cmd_quality_profile_id against the same
+    list, never assume PREFERRED_NAME was actually the match (it might have
+    fallen back to the first profile instead)."""
+    print(_pick_quality_profile(_load_stdin_json(), args.preferred_name)["name"])
+
+
+def cmd_indexers_needing_min_seeders(args):
+    """Print newline-separated ids of indexers (stdin: a Sonarr/Radarr
+    /indexer list) whose "minimumSeeders" field isn't already VALUE.
+    Indexers with no such field (non-torrent protocols) are left alone."""
+    indexers = _load_stdin_json()
+    target = str(args.value)
+    for indexer in indexers:
+        fields = {f["name"]: str(f.get("value")) for f in indexer.get("fields", [])}
+        if "minimumSeeders" in fields and fields["minimumSeeders"] != target:
+            print(indexer["id"])
+
+
+def cmd_set_min_seeders(args):
+    """Set "minimumSeeders" to VALUE inside a single indexer object's fields
+    array (stdin), and print the full object back out ready to PUT."""
+    indexer = _load_stdin_json()
+    for indexer_field in indexer.get("fields", []):
+        if indexer_field["name"] == "minimumSeeders":
+            indexer_field["value"] = int(args.value)
+    json.dump(indexer, sys.stdout)
 
 
 def cmd_bazarr_needs_setup(args):
@@ -325,10 +362,15 @@ def cmd_jellyfin_api_key(args):
     print("" if matching_key is None else matching_key["AccessToken"])
 
 
-def cmd_has_seerr_app(args):
-    """Print yes/no: does the Seerr settings list on stdin include HOSTNAME."""
-    configured_apps = _load_stdin_json()
-    print(YES if any(app["hostname"] == args.hostname for app in configured_apps) else NO)
+def cmd_seerr_app_field(args):
+    """Print one FIELD from the entry in a Seerr settings list (stdin) whose
+    hostname matches HOSTNAME, or nothing if no such entry exists. Used both
+    to check whether Sonarr/Radarr is already connected (via the "id" field)
+    and to read its current activeProfileId, so _link_seerr_app can update an
+    existing connection's profile in place instead of only wiring it once."""
+    entries = _load_stdin_json()
+    matching_entry = next((entry for entry in entries if entry.get("hostname") == args.hostname), None)
+    print("" if matching_entry is None else matching_entry.get(args.field, ""))
 
 
 def cmd_jellyfin_library_ids(_args):
@@ -414,6 +456,18 @@ _HOMEPAGE_SERVICES = [
 ]
 
 
+def cmd_qbt_clamav_scan_payload(_args):
+    """Build the qBittorrent setPreferences payload that wires up
+    scripts/config/qbt-clamav-scan.sh as the "run external program on
+    torrent completion" command. The program string embeds literal double
+    quotes around %F/%I (so paths with spaces survive qBittorrent's own
+    argument splitting), which would need error-prone manual escaping to
+    embed safely in a hand-built JSON string in bash - json.dumps handles it
+    for free."""
+    program = '/scripts/clamav-scan.sh "%F" "%I"'
+    json.dump({"autorun_enabled": True, "autorun_program": program}, sys.stdout)
+
+
 def cmd_homepage_services_config(_args):
     """Build Homepage's services.yaml from per-service ports/credentials on
     stdin - a JSON object keyed by the internal service names in
@@ -495,13 +549,16 @@ SUBCOMMANDS = [
     Subcommand("has-notification", cmd_has_named_entry, arguments=[("name", {})]),
     Subcommand("find-tag-id", cmd_find_tag_id, arguments=[("label", {})]),
     Subcommand("quality-profile-id", cmd_quality_profile_id, arguments=[("preferred_name", {})]),
+    Subcommand("quality-profile-name", cmd_quality_profile_name, arguments=[("preferred_name", {})]),
+    Subcommand("indexers-needing-min-seeders", cmd_indexers_needing_min_seeders, arguments=[("value", {"type": int})]),
+    Subcommand("set-min-seeders", cmd_set_min_seeders, arguments=[("value", {"type": int})]),
     Subcommand("bazarr-needs-setup", cmd_bazarr_needs_setup, arguments=[("username", {})]),
     Subcommand("jellyfin-wizard-completed", cmd_jellyfin_wizard_completed),
     Subcommand("extract-token", cmd_extract_token, arguments=[("field", {})]),
     Subcommand("has-jellyfin-library", cmd_has_jellyfin_library, arguments=[("path", {})]),
     Subcommand("jellyfin-realtime-monitor-payload", cmd_jellyfin_realtime_monitor_payload, arguments=[("path", {})]),
     Subcommand("jellyfin-api-key", cmd_jellyfin_api_key, arguments=[("app_name", {})]),
-    Subcommand("has-seerr-app", cmd_has_seerr_app, arguments=[("hostname", {})]),
+    Subcommand("seerr-app-field", cmd_seerr_app_field, arguments=[("hostname", {}), ("field", {})]),
     Subcommand("jellyfin-library-ids", cmd_jellyfin_library_ids),
     Subcommand("qbt-exclusions-configured", cmd_qbt_exclusions_configured, arguments=[("exclusions_file", {})]),
     Subcommand("qbt-exclusions-payload", cmd_qbt_exclusions_payload, arguments=[("exclusions_file", {})]),
@@ -511,6 +568,7 @@ SUBCOMMANDS = [
         ("base_url", {}),
         ("api_key", {}),
     ]),
+    Subcommand("qbt-clamav-scan-payload", cmd_qbt_clamav_scan_payload),
     Subcommand("homepage-services-config", cmd_homepage_services_config),
 ]
 

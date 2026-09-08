@@ -121,8 +121,11 @@ if [ -n "$JELLYFIN_KEY" ]; then
   configure_servarr_jellyfin_notification "Sonarr" sonarr "$STACK_SERVICES_SONARR_PORT" "$STACK_SERVICES_SONARR_API_VERSION" "$SONARR_KEY"
   configure_servarr_jellyfin_notification "Radarr" radarr "$STACK_SERVICES_RADARR_PORT" "$STACK_SERVICES_RADARR_API_VERSION" "$RADARR_KEY"
 fi
-configure_seerr
+# Recyclarr must run before configure_seerr: Seerr picks its quality profile
+# by name (stack.yaml's seerr.preferred_quality_profile_*), and those names
+# only exist in Sonarr/Radarr once Recyclarr has synced them.
 configure_recyclarr
+configure_seerr
 configure_homepage
 
 log "Done. Services (once your hosts file / DNS resolves *.media.lan to this machine):"

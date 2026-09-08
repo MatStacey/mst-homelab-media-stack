@@ -94,6 +94,7 @@ flowchart TB
 | Seerr | Media request UI | `seerr.media.lan` |
 | Byparr | Cloudflare/anti-bot bypass for Prowlarr indexers | — |
 | Recyclarr | Syncs TRaSH Guides quality profiles/custom formats into Sonarr/Radarr | — |
+| ClamAV | Scans every completed download before Sonarr/Radarr import it (see Notes) | — |
 | Homepage | Dashboard with live widgets for the whole stack | `status.media.lan` |
 | Caddy | Reverse proxy / gateway, plus a static landing page | `:80` / `:443` |
 | *(landing page)* | Tile grid linking to every service above | `homepage.media.lan` |
@@ -366,3 +367,42 @@ Jellyfin) also publish ports directly for LAN discovery/native app use.
   this machine testing its own LAN IP — Windows commonly fails to "hairpin"
   a connection back to its own external address, which looks identical to a
   real block but isn't one.
+
+- **Download safeguards**: several independent layers, each catching a
+  different failure mode - no single one of these can guarantee a download
+  is safe or correct, which is why there are several:
+  - **File-type exclusions** (`scripts/config/qbittorrent-exclusions`):
+    qBittorrent refuses to ever save executables, scripts, or other
+    non-media file types, regardless of what's inside a torrent.
+  - **ClamAV scan on completion** (`scripts/config/qbt-clamav-scan.sh`):
+    every completed download is scanned against ClamAV's definitions (kept
+    updated by the `clamav` container, shared read-only into qBittorrent)
+    before Sonarr/Radarr ever see it. A match deletes the torrent and its
+    files immediately - check `config/qbittorrent/clamav-scan.log` for a
+    history of anything caught.
+  - **Trusted-release scoring + minimum seeders**: Sonarr/Radarr's quality
+    profiles are Recyclarr-managed (not their own zero-signal stock
+    profiles - see below), so every grab is scored against TRaSH Guides'
+    custom formats (trusted release groups favored, known-bad/obfuscated/
+    fake releases penalized) rather than picked by resolution match alone.
+    Every indexer also has a `minimum_seeders` floor (`scripts/config/
+    stack.yaml`, default 5) to filter out just-published bait torrents with
+    no real swarm behind them yet.
+  - **What none of this can do**: verify that a video file's actual
+    *content* matches its filename/label - that would need perceptual
+    video/audio fingerprinting, which none of these tools do. If a
+    correctly-named file turns out to have the wrong content after playing
+    it, the recovery path is Radarr/Sonarr's own history: find the download
+    in its History tab, "Mark as Failed" - this blocklists that specific
+    release and triggers a re-search, so the next grab comes from a
+    different (hopefully correct) release.
+
+- **Quality profiles** (Recyclarr-managed, `config/recyclarr/configs/`):
+  Radarr has three - `HD Bluray + WEB` (1080p ceiling), `WEBDL 2160p
+  (Combined)` (1080p or 4K WEB-DL, upgrades toward 4K when available - this
+  is Seerr's default, see `scripts/config/stack.yaml`'s
+  `seerr.preferred_quality_profile_radarr`), and `Remux 2160p (Combined)`
+  (same but includes much larger Bluray-disk/Remux tiers too, for when
+  quality matters more than disk space - pick it manually per-request in
+  Seerr's advanced options). Sonarr has `WEB-1080p`. All of them carry the
+  same TRaSH Guides custom-format scoring described above.

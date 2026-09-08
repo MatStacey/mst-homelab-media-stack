@@ -40,9 +40,17 @@ services:
       - PGID=1000
       - TZ=${TZ}
       - WEBUI_PORT=8080
+      # Installs the `clamscan` CLI (not clamd - no daemon needed) at
+      # container start, so scripts/config/qbt-clamav-scan.sh can scan
+      # completed downloads against the clamav service's shared,
+      # continuously-updated definitions below.
+      - DOCKER_MODS=linuxserver/mods:universal-package-install
+      - INSTALL_PACKAGES=clamav
     volumes:
       - ./config/qbittorrent:/config
       - /opt/media-data:/data
+      - ./config/clamav:/var/lib/clamav:ro
+      - ./scripts/config/qbt-clamav-scan.sh:/scripts/clamav-scan.sh:ro
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080"]
       interval: 30s
@@ -130,14 +138,41 @@ services:
       - PGID=1000
       - TZ=${TZ}
       - WEBUI_PORT=8080
+      - DOCKER_MODS=linuxserver/mods:universal-package-install
+      - INSTALL_PACKAGES=clamav
     volumes:
       - ./config/qbittorrent:/config
       - /opt/media-data:/data
+      - ./config/clamav:/var/lib/clamav:ro
+      - ./scripts/config/qbt-clamav-scan.sh:/scripts/clamav-scan.sh:ro
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080"]
       interval: 30s
       timeout: 10s
       retries: 3
+    logging: *default-logging
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
+  # Keeps virus definitions updated under ./config/clamav, shared read-only
+  # into both qbittorrent variants above for `clamscan` (see
+  # scripts/config/qbt-clamav-scan.sh) - no clamd network calls needed, so
+  # nothing depends on this container being up at scan time beyond its
+  # definitions already being on disk.
+  clamav:
+    image: clamav/clamav:stable
+    container_name: clamav
+    networks:
+      - homelab_net
+    volumes:
+      - ./config/clamav:/var/lib/clamav
+    healthcheck:
+      test: ["CMD-SHELL", "test -S /run/clamav/clamd.sock"]
+      interval: 5m
+      timeout: 30s
+      retries: 3
+      start_period: 5m
     logging: *default-logging
     security_opt:
       - no-new-privileges:true

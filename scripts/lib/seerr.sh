@@ -8,32 +8,57 @@
 # The bootstrap call requires an explicit serverType:2 (JELLYFIN) field or
 # it fails with a NO_ADMIN_USER error.
 
-_find_quality_profile_id() {
-  local key="$1" port="$2" api_version="$3" container="$4"
-  cin "$container" -H "X-Api-Key: $key" "http://localhost:$port/api/$api_version/qualityprofile" \
-    | $PY quality-profile-id "$STACK_SEERR_PREFERRED_QUALITY_PROFILE"
+# Prints "id name" (space-separated) for the picked quality profile - name
+# last since it may itself contain spaces (e.g. "HD - 720p/1080p"), and
+# callers only need $1 split off, with the remainder taken as the name.
+_find_quality_profile() {
+  local key="$1" port="$2" api_version="$3" container="$4" preferred_name="$5"
+  local profiles_json
+  profiles_json="$(cin "$container" -H "X-Api-Key: $key" "http://localhost:$port/api/$api_version/qualityprofile")"
+  echo "$(echo "$profiles_json" | $PY quality-profile-id "$preferred_name") $(echo "$profiles_json" | $PY quality-profile-name "$preferred_name")"
 }
 
-# Connect Seerr to a Sonarr/Radarr instance. KIND is "sonarr" or "radarr";
-# EXTRA_FIELDS is additional JSON object fields specific to that kind (season
-# folders/language profile for Sonarr, minimum availability for Radarr).
+# Connect Seerr to a Sonarr/Radarr instance, or - if already connected - make
+# sure it's still pointed at the preferred quality profile (stack.yaml's
+# seerr.preferred_quality_profile_{sonarr,radarr}), correcting it in place if
+# not. KIND is "sonarr" or "radarr"; EXTRA_FIELDS is additional JSON object
+# fields specific to that kind (season folders/language profile for Sonarr,
+# minimum availability for Radarr).
 _link_seerr_app() {
   local base_url="$1" cookies="$2" kind="$3" hostname="$4" port="$5" key="$6" path="$7" extra_fields="$8"
-  local already_connected
-  already_connected="$(cin sonarr -b "$cookies" "$base_url/api/v1/settings/$kind" | $PY has-seerr-app "$hostname")"
-  if [ "$already_connected" = "yes" ]; then
-    log "Seerr: $kind already connected, skipping"
+  local preferred_profile quality_profile
+  if [ "$kind" = "sonarr" ]; then
+    preferred_profile="$STACK_SEERR_PREFERRED_QUALITY_PROFILE_SONARR"
+    quality_profile="$(_find_quality_profile "$SONARR_KEY" "$STACK_SERVICES_SONARR_PORT" "$STACK_SERVICES_SONARR_API_VERSION" sonarr "$preferred_profile")"
+  else
+    preferred_profile="$STACK_SEERR_PREFERRED_QUALITY_PROFILE_RADARR"
+    quality_profile="$(_find_quality_profile "$RADARR_KEY" "$STACK_SERVICES_RADARR_PORT" "$STACK_SERVICES_RADARR_API_VERSION" radarr "$preferred_profile")"
+  fi
+  local quality_profile_id="${quality_profile%% *}" quality_profile_name="${quality_profile#* }"
+
+  local existing_settings
+  existing_settings="$(cin sonarr -b "$cookies" "$base_url/api/v1/settings/$kind")"
+  local existing_id
+  existing_id="$(echo "$existing_settings" | $PY seerr-app-field "$hostname" id)"
+  if [ -n "$existing_id" ]; then
+    local existing_profile_id
+    existing_profile_id="$(echo "$existing_settings" | $PY seerr-app-field "$hostname" activeProfileId)"
+    if [ "$existing_profile_id" = "$quality_profile_id" ]; then
+      log "Seerr: $kind already connected with the preferred quality profile, skipping"
+      return
+    fi
+    cin sonarr -b "$cookies" -X PUT "$base_url/api/v1/settings/$kind/$existing_id" -H "Content-Type: application/json" -d "{
+      \"name\": \"${kind^}\", \"hostname\": \"$hostname\", \"port\": $port, \"apiKey\": \"$key\",
+      \"useSsl\": false, \"baseUrl\": \"\", \"activeProfileId\": $quality_profile_id, \"activeProfileName\": \"$quality_profile_name\", \"activeDirectory\": \"$path\",
+      \"is4k\": false, \"isDefault\": true, \"externalUrl\": \"\", \"syncEnabled\": true,
+      \"preventSearch\": false, \"tagRequests\": false $extra_fields}" >/dev/null
+    log "Seerr: $kind quality profile updated to '$quality_profile_name'"
     return
   fi
-  local quality_profile_id
-  if [ "$kind" = "sonarr" ]; then
-    quality_profile_id="$(_find_quality_profile_id "$SONARR_KEY" "$STACK_SERVICES_SONARR_PORT" "$STACK_SERVICES_SONARR_API_VERSION" sonarr)"
-  else
-    quality_profile_id="$(_find_quality_profile_id "$RADARR_KEY" "$STACK_SERVICES_RADARR_PORT" "$STACK_SERVICES_RADARR_API_VERSION" radarr)"
-  fi
+
   cin sonarr -b "$cookies" -X POST "$base_url/api/v1/settings/$kind" -H "Content-Type: application/json" -d "{
     \"name\": \"${kind^}\", \"hostname\": \"$hostname\", \"port\": $port, \"apiKey\": \"$key\",
-    \"useSsl\": false, \"baseUrl\": \"\", \"activeProfileId\": $quality_profile_id, \"activeDirectory\": \"$path\",
+    \"useSsl\": false, \"baseUrl\": \"\", \"activeProfileId\": $quality_profile_id, \"activeProfileName\": \"$quality_profile_name\", \"activeDirectory\": \"$path\",
     \"is4k\": false, \"isDefault\": true, \"externalUrl\": \"\", \"syncEnabled\": true,
     \"preventSearch\": false, \"tagRequests\": false $extra_fields}" >/dev/null
   log "Seerr: connected to $kind"

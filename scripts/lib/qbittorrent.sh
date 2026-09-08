@@ -155,6 +155,28 @@ _ensure_qbt_listen_port() {
   log "qBittorrent: listening port set to Gluetun's forwarded port ($forwarded_port)"
 }
 
+# Scan every completed download with ClamAV before Sonarr/Radarr import it -
+# see scripts/config/qbt-clamav-scan.sh for what the script itself does on a
+# match. Idempotent.
+_ensure_qbt_clamav_scan() {
+  local base_url="$1" cookies="$2"
+  local program='/scripts/clamav-scan.sh "%F" "%I"'
+  local prefs current_enabled current_program
+  prefs="$(curl -s -b "$cookies" "$base_url/api/v2/app/preferences")"
+  current_enabled="$(echo "$prefs" | $PY get-field autorun_enabled)"
+  current_program="$(echo "$prefs" | $PY get-field autorun_program)"
+  if [ "$current_enabled" = "True" ] && [ "$current_program" = "$program" ]; then
+    log "qBittorrent: ClamAV completion scan already configured, skipping"
+    return
+  fi
+  local payload_file
+  payload_file="$(mktemp)"
+  $PY qbt-clamav-scan-payload > "$payload_file"
+  curl -s -b "$cookies" -X POST "$base_url/api/v2/app/setPreferences" --data-urlencode "json@$payload_file" >/dev/null
+  rm -f "$payload_file"
+  log "qBittorrent: ClamAV completion scan configured"
+}
+
 configure_qbittorrent() {
   local base_url="http://localhost:$STACK_SERVICES_QBITTORRENT_PORT"
   log "Configuring qBittorrent..."
@@ -167,6 +189,7 @@ configure_qbittorrent() {
     _ensure_qbt_active_limits "$base_url" "$cookies"
     _ensure_qbt_bypass_local_auth "$base_url" "$cookies"
     _ensure_qbt_listen_port "$base_url" "$cookies"
+    _ensure_qbt_clamav_scan "$base_url" "$cookies"
   fi
 
   rm -f "$cookies"

@@ -84,6 +84,49 @@ configure_servarr_jellyfin_notification() {
   log "$name: connected Jellyfin notification (library auto-refresh on import)"
 }
 
+# Raise every torrent indexer's own "Minimum Seeders" field (Settings >
+# Indexers, per indexer) to STACK_PROWLARR_MINIMUM_SEEDERS, filtering out
+# just-published bait/fake torrents with no real swarm behind them yet. This
+# is a Sonarr/Radarr-side field, not something Prowlarr's ApplicationIndexerSync
+# owns or overwrites, so it's safe to set once here rather than needing to
+# reapply after every sync. Only runs after indexers exist (i.e. after
+# Prowlarr's sync), so this polls briefly rather than assuming they're
+# already there. Idempotent.
+configure_servarr_minimum_seeders() {
+  local name="$1" container="$2" port="$3" api_version="$4" key="$5"
+  local indexers_json waited=0
+  while true; do
+    indexers_json="$(cin "$container" -H "X-Api-Key: $key" "http://localhost:$port/api/$api_version/indexer")"
+    [ "$indexers_json" != "[]" ] && [ -n "$indexers_json" ] && break
+    waited=$((waited + 3))
+    if [ "$waited" -ge 30 ]; then
+      warn "$name: no indexers found after ${waited}s - skipping minimum-seeders setup"
+      return
+    fi
+    sleep 3
+  done
+
+  local stale_ids
+  stale_ids="$(echo "$indexers_json" | $PY indexers-needing-min-seeders "$STACK_PROWLARR_MINIMUM_SEEDERS")"
+  if [ -z "$stale_ids" ]; then
+    log "$name: indexer minimum seeders already at $STACK_PROWLARR_MINIMUM_SEEDERS, skipping"
+    return
+  fi
+
+  local indexer_id updated_file
+  while IFS= read -r indexer_id; do
+    [ -z "$indexer_id" ] && continue
+    updated_file="$(mktemp)"
+    cin "$container" -H "X-Api-Key: $key" "http://localhost:$port/api/$api_version/indexer/$indexer_id" \
+      | $PY set-min-seeders "$STACK_PROWLARR_MINIMUM_SEEDERS" > "$updated_file"
+    _docker_cp_and_remove_local "$updated_file" "$container" /tmp/indexer.json
+    cin "$container" -X PUT -H "X-Api-Key: $key" -H "Content-Type: application/json" \
+      "http://localhost:$port/api/$api_version/indexer/$indexer_id" --data @/tmp/indexer.json >/dev/null
+    _docker_rm_in_container "$container" /tmp/indexer.json
+  done <<< "$stale_ids"
+  log "$name: raised minimum seeders to $STACK_PROWLARR_MINIMUM_SEEDERS"
+}
+
 # Add qBittorrent as a download client under the given completed-download CATEGORY.
 # Idempotent (checks for any existing QBittorrent-implementation client first).
 configure_servarr_downloadclient() {
