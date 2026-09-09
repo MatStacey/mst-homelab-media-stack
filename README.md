@@ -28,7 +28,7 @@ flowchart TB
         OAuth2("OAuth2-Proxy")
         GoogleSSO(("Google SSO"))
         DockerNet
-        MediaStorage[("/opt/media-data")]
+        MediaStorage[("Media Storage ($MEDIA_DATA_PATH)")]
   end
     Internet(("Internet")) -- HTTPS (Port 443) --> Caddy
     Caddy -- Auth Callback --> OAuth2
@@ -91,6 +91,7 @@ flowchart TB
 | Radarr | Movie automation | `radarr.media.lan` |
 | Bazarr | Subtitle automation | `bazarr.media.lan` |
 | Jellyfin | Media server | `jellyfin.media.lan` |
+| dovi_convert | Converts Dolby Vision Profile 7 titles to 8.1 for wider client compatibility (see Notes) | `dovi-convert.media.lan` |
 | Seerr | Media request UI | `seerr.media.lan` |
 | Byparr | Cloudflare/anti-bot bypass for Prowlarr indexers | — |
 | Recyclarr | Syncs TRaSH Guides quality profiles/custom formats into Sonarr/Radarr | — |
@@ -112,10 +113,17 @@ Jellyfin) also publish ports directly for LAN discovery/native app use.
   with an "externally managed environment" error; use `apt install
   python3-yaml`, `pip install --user -r scripts/requirements.txt`, or a venv
   instead.
-- A host directory for media/downloads (default: `/opt/media-data`, mounted
-  read-write into qBittorrent/*arr and read-only into Jellyfin)
+- A host directory for media/downloads, set via `MEDIA_DATA_PATH` in `.env`
+  (default: `/opt/media-data`, mounted read-write into qBittorrent/*arr and
+  read-only into Jellyfin). `downloads/` and `media/` under it must stay on
+  the same filesystem — Sonarr/Radarr hardlink finished downloads straight
+  into the library rather than copying them, which only works within one
+  filesystem.
 - LAN DNS entries (or hosts-file entries) resolving `*.media.lan` to this
   host, or edit `caddy/Caddyfile` to suit your own domain
+- (Optional, for GPU hardware transcoding) An NVIDIA GPU with
+  `nvidia-container-toolkit` installed on the host — see [GPU hardware
+  transcoding](#gpu-hardware-transcoding-jellyfin) below
 
 ## Setup
 
@@ -294,11 +302,68 @@ Jellyfin) also publish ports directly for LAN discovery/native app use.
      `:8096`/`:5055`/`:8080`/`:3000` for the rest - no certificate warnings,
      no DNS setup, works the same on cellular data as at home.
 
+## GPU hardware transcoding (Jellyfin)
+
+`docker-compose.yml`'s `jellyfin` service already requests the GPU (an
+NVIDIA `deploy.resources.reservations.devices` entry, plus
+`NVIDIA_DRIVER_CAPABILITIES=compute,video,utility` so NVENC/NVDEC are
+actually exposed, not just CUDA compute). It's hardcoded to NVIDIA — swap
+the `driver: nvidia` device reservation for the Intel/AMD VAAPI approach
+(bind-mounting `/dev/dri` instead) if this ever runs on different
+hardware.
+
+Two things still need doing on the host itself, once, since they're
+privileged and outside Docker's reach:
+
+1. **Install `nvidia-container-toolkit`** so Docker can actually hand a
+   GPU to a container (`nvidia-smi` working on the host isn't enough by
+   itself):
+
+   ```bash
+   curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+   curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
+     sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
+     sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
+   sudo apt-get update
+   sudo apt-get install -y nvidia-container-toolkit
+   sudo nvidia-ctk runtime configure --runtime=docker
+   sudo systemctl restart docker
+   ```
+
+   Verify it worked:
+
+   ```bash
+   docker run --rm --gpus all nvidia/cuda:12.4.1-base-ubuntu22.04 nvidia-smi
+   ```
+
+   That should print the same GPU table `nvidia-smi` shows on the host. If
+   it instead errors with something like "could not select device driver
+   ... with capabilities: [[gpu]]", the toolkit isn't installed/configured
+   yet — redo the steps above rather than touching the compose file.
+
+2. **Enable it in Jellyfin's dashboard**, after `docker compose up -d
+   jellyfin` picks up the GPU reservation: *Dashboard → Playback* → set
+   *Hardware acceleration* to `Nvidia NVENC`, tick the codecs you want
+   hardware-decoded (H.264/HEVC/AV1 as your GPU generation supports), and
+   save. Confirm it's actually being used during a transcode from
+   *Dashboard → Dashboard* → the active playback session should show
+   `(hw)` next to the video codec, not just the codec name alone.
+
 ## Notes
 
 - Per-service state lives under `./config/<service>/` (git-ignored).
 - `.env` holds secrets and is git-ignored — only `.env.example` is
   committed.
+- **dovi_convert**: open `dovi-convert.media.lan` for its web terminal, `cd`
+  to `/data/media/...` and run `dovi_convert scan` on a title's folder to
+  check it, then `dovi_convert convert <file>` to convert it. It backs up
+  the original automatically (add `--delete` once you've confirmed the
+  converted file plays correctly, to reclaim the space) and **skips
+  "Complex FEL" files by default** — those use the enhancement layer for
+  real brightness data rather than just redundant mapping, so converting
+  them loses picture quality rather than just compatibility. Don't pass
+  `--force` on a file it flagged as Complex FEL unless you've actually read
+  why (its own docs explain the tradeoff) and decided it's worth it.
 - **TLS**: `*.media.lan` isn't a real, publicly-resolvable domain, so it can
   never get a publicly-trusted Let's Encrypt certificate. The Caddyfile's
   `local_certs` option tells Caddy to self-sign one from its own internal CA

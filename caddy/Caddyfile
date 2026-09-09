@@ -31,6 +31,10 @@ jellyfin.media.lan {
 	reverse_proxy jellyfin:8096
 }
 
+dovi-convert.media.lan {
+	reverse_proxy dovi-convert:7681
+}
+
 seerr.media.lan {
 	reverse_proxy seerr:5055
 }

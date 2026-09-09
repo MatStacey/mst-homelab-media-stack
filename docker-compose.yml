@@ -48,7 +48,7 @@ services:
       - INSTALL_PACKAGES=clamav
     volumes:
       - ./config/qbittorrent:/config
-      - /opt/media-data:/data
+      - ${MEDIA_DATA_PATH}:/data
       - ./config/clamav:/var/lib/clamav:ro
       - ./scripts/config/qbt-clamav-scan.sh:/scripts/clamav-scan.sh:ro
     healthcheck:
@@ -142,7 +142,7 @@ services:
       - INSTALL_PACKAGES=clamav
     volumes:
       - ./config/qbittorrent:/config
-      - /opt/media-data:/data
+      - ${MEDIA_DATA_PATH}:/data
       - ./config/clamav:/var/lib/clamav:ro
       - ./scripts/config/qbt-clamav-scan.sh:/scripts/clamav-scan.sh:ro
     healthcheck:
@@ -277,7 +277,7 @@ services:
       - TZ=${TZ}
     volumes:
       - ./config/sonarr:/config
-      - /opt/media-data:/data
+      - ${MEDIA_DATA_PATH}:/data
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8989/ping"]
       interval: 30s
@@ -299,7 +299,7 @@ services:
       - TZ=${TZ}
     volumes:
       - ./config/radarr:/config
-      - /opt/media-data:/data
+      - ${MEDIA_DATA_PATH}:/data
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:7878/ping"]
       interval: 30s
@@ -349,7 +349,7 @@ services:
       - TZ=${TZ}
     volumes:
       - ./config/bazarr:/config
-      - /opt/media-data:/data
+      - ${MEDIA_DATA_PATH}:/data
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:6767/"]
       interval: 30s
@@ -370,12 +370,48 @@ services:
       - "8096:8096"   # published directly too — native Jellyfin apps prefer direct discovery
     volumes:
       - ./config/jellyfin:/config
-      - /opt/media-data/media:/data/media:ro
+      - ${MEDIA_DATA_PATH}/media:/data/media:ro
+    environment:
+      # "video" capability is what actually exposes NVENC/NVDEC — the default
+      # (compute,utility) doesn't include it.
+      - NVIDIA_DRIVER_CAPABILITIES=compute,video,utility
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8096/health"]
       interval: 30s
       timeout: 10s
       retries: 3
+    logging: *default-logging
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
+  dovi-convert:
+    # Converts Dolby Vision Profile 7 (dual-layer, common on UHD Blu-ray
+    # remuxes) to Profile 8.1 - Jellyfin's Android TV client can't direct
+    # play Profile 7 with lossless audio and falls back to transcoding
+    # instead, while 8.1 direct plays on virtually everything. Detects
+    # "Complex FEL" files (where the enhancement layer carries real
+    # brightness data, not just redundant mapping) and skips them by
+    # default rather than degrading picture quality - see its README
+    # before using --force on those. Web terminal only, not a background
+    # job - conversions are triggered manually per title.
+    image: cryptochrome/dovi_convert:8.2.0
+    container_name: dovi-convert
+    networks:
+      - homelab_net
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=${TZ}
+    volumes:
+      - ${MEDIA_DATA_PATH}:/data
     logging: *default-logging
     security_opt:
       - no-new-privileges:true
