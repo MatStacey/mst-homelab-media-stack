@@ -55,17 +55,28 @@ source "$LIB_DIR/seerr.sh"
 source "$LIB_DIR/recyclarr.sh"
 # shellcheck source=lib/homepage.sh
 source "$LIB_DIR/homepage.sh"
+# shellcheck source=lib/vault.sh
+source "$LIB_DIR/vault.sh"
 
-# --- credentials: use .env if set, then ~/secrets/homelab.sh if present,
-# otherwise prompt (never written back to .env or the secrets file) ---
-if [ -f "$HOME/secrets/homelab.sh" ]; then
+# --- credentials: Vault if "vault" is in COMPOSE_PROFILES, else .env if
+# set, then ~/secrets/homelab.sh if present, otherwise prompt (never written
+# back to .env or the secrets file) ---
+VAULT_ENABLED=no
+case ",${COMPOSE_PROFILES:-}," in *,vault,*) VAULT_ENABLED=yes ;; esac
+
+if [ "$VAULT_ENABLED" = yes ]; then
+  configure_vault
+  fetch_secrets_from_vault
+elif [ -f "$HOME/secrets/homelab.sh" ]; then
   # shellcheck disable=SC1091
   source "$HOME/secrets/homelab.sh"
 fi
-# Only TS_AUTHKEY needs to reach docker compose's own environment (for
-# ${TS_AUTHKEY} substitution in docker-compose.yml) - ADMIN_USERNAME/PASSWORD
-# stay unexported since this script uses them directly, never via a child
-# process's environment.
+# Only TS_AUTHKEY/VPN_*/WIREGUARD_* need to reach docker compose's own
+# environment (for their ${...} substitutions in docker-compose.yml) -
+# ADMIN_USERNAME/PASSWORD stay unexported since this script uses them
+# directly, never via a child process's environment. fetch_secrets_from_vault
+# already exports the VPN/WireGuard vars itself; only TS_AUTHKEY still needs
+# it here since it's also set by the ~/secrets/homelab.sh path above.
 [ -n "${TS_AUTHKEY:-}" ] && export TS_AUTHKEY
 if [ -z "${ADMIN_USERNAME:-}" ]; then
   read -rp "Admin username to use for all service logins: " ADMIN_USERNAME

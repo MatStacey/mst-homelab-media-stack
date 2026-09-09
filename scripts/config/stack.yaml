@@ -116,3 +116,13 @@ qbittorrent:
   max_active_downloads: 5
   max_active_uploads: 5
   max_active_torrents: 8
+
+# Only used when "vault" is in COMPOSE_PROFILES. Points at the existing,
+# standalone mst-vault project (~/vcs/personal/mst-vault) - this stack is
+# just a *client* of it, not its own Vault deployment. See
+# scripts/lib/vault.sh and README's "Vault (optional)" section.
+vault:
+  container: vault
+  port: 8200
+  kv_mount: secret
+  kv_path: mst-homelab-media-stack
