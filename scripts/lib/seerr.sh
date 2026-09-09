@@ -26,6 +26,12 @@ _find_quality_profile() {
 # minimum availability for Radarr).
 _link_seerr_app() {
   local base_url="$1" cookies="$2" kind="$3" hostname="$4" port="$5" key="$6" path="$7" extra_fields="$8"
+  # hostname is the internal Docker service name (sonarr/radarr) - fine for
+  # Seerr's own server-to-server API calls, but Seerr also uses this same
+  # connection's externalUrl field to build the "Open in Sonarr/Radarr"
+  # links shown in its UI, which the browser has to be able to reach itself.
+  # Matches the Caddyfile's own <name>.media.lan site-block convention.
+  local external_url="https://$hostname.media.lan"
   local preferred_profile quality_profile
   if [ "$kind" = "sonarr" ]; then
     preferred_profile="$STACK_SEERR_PREFERRED_QUALITY_PROFILE_SONARR"
@@ -41,25 +47,26 @@ _link_seerr_app() {
   local existing_id
   existing_id="$(echo "$existing_settings" | $PY seerr-app-field "$hostname" id)"
   if [ -n "$existing_id" ]; then
-    local existing_profile_id
+    local existing_profile_id existing_external_url
     existing_profile_id="$(echo "$existing_settings" | $PY seerr-app-field "$hostname" activeProfileId)"
-    if [ "$existing_profile_id" = "$quality_profile_id" ]; then
-      log "Seerr: $kind already connected with the preferred quality profile, skipping"
+    existing_external_url="$(echo "$existing_settings" | $PY seerr-app-field "$hostname" externalUrl)"
+    if [ "$existing_profile_id" = "$quality_profile_id" ] && [ "$existing_external_url" = "$external_url" ]; then
+      log "Seerr: $kind already connected with the preferred quality profile and external URL, skipping"
       return
     fi
     cin sonarr -b "$cookies" -X PUT "$base_url/api/v1/settings/$kind/$existing_id" -H "Content-Type: application/json" -d "{
       \"name\": \"${kind^}\", \"hostname\": \"$hostname\", \"port\": $port, \"apiKey\": \"$key\",
       \"useSsl\": false, \"baseUrl\": \"\", \"activeProfileId\": $quality_profile_id, \"activeProfileName\": \"$quality_profile_name\", \"activeDirectory\": \"$path\",
-      \"is4k\": false, \"isDefault\": true, \"externalUrl\": \"\", \"syncEnabled\": true,
+      \"is4k\": false, \"isDefault\": true, \"externalUrl\": \"$external_url\", \"syncEnabled\": true,
       \"preventSearch\": false, \"tagRequests\": false $extra_fields}" >/dev/null
-    log "Seerr: $kind quality profile updated to '$quality_profile_name'"
+    log "Seerr: $kind quality profile set to '$quality_profile_name', external URL set to $external_url"
     return
   fi
 
   cin sonarr -b "$cookies" -X POST "$base_url/api/v1/settings/$kind" -H "Content-Type: application/json" -d "{
     \"name\": \"${kind^}\", \"hostname\": \"$hostname\", \"port\": $port, \"apiKey\": \"$key\",
     \"useSsl\": false, \"baseUrl\": \"\", \"activeProfileId\": $quality_profile_id, \"activeProfileName\": \"$quality_profile_name\", \"activeDirectory\": \"$path\",
-    \"is4k\": false, \"isDefault\": true, \"externalUrl\": \"\", \"syncEnabled\": true,
+    \"is4k\": false, \"isDefault\": true, \"externalUrl\": \"$external_url\", \"syncEnabled\": true,
     \"preventSearch\": false, \"tagRequests\": false $extra_fields}" >/dev/null
   log "Seerr: connected to $kind"
 }
