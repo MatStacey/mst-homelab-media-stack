@@ -1,84 +1,201 @@
 # Media Homelab
 
 A self-contained Docker Compose media stack — qBittorrent, Prowlarr, Sonarr,
-Radarr, Bazarr, Jellyfin, and Seerr — sitting behind a Caddy reverse
-proxy on a private Docker network, with an optional VPN-routed mode via
-Gluetun for qBittorrent, Prowlarr, and Byparr.
+Radarr, Bazarr, Jellyfin, dovi_convert, and Seerr — sitting behind a Caddy
+reverse proxy on a private Docker network, with an optional VPN-routed mode
+via Gluetun for qBittorrent, Prowlarr, and Byparr. ClamAV scans every
+completed download, Recyclarr keeps Sonarr/Radarr's quality profiles in
+sync, Homepage is the dashboard/landing page, Tailscale gives optional
+remote access over a private mesh, and Vault is an optional secrets store
+provided by a separate, pre-existing project.
 
-```mermaid
-flowchart TB
- subgraph VPNNet["Gluetun Network Namespace"]
-        Gluetun("Gluetun VPN Gateway")
-        qBittorrent("qBittorrent")
-        Prowlarr("Prowlarr")
-        Byparr("Byparr")
-  end
- subgraph DockerNet["Docker Network: homelab_net"]
-        Jellyfin("Jellyfin")
-        Seerr("Seerr")
-        Homepage("Homepage")
-        Sonarr("Sonarr")
-        Radarr("Radarr")
-        Bazarr("Bazarr")
-        Recyclarr("Recyclarr")
-        VPNNet
-  end
- subgraph Host["Local Host Machine"]
-        Caddy("Caddy Reverse Proxy")
-        OAuth2("OAuth2-Proxy")
-        GoogleSSO(("Google SSO"))
-        DockerNet
-        MediaStorage[("Media Storage ($MEDIA_DATA_PATH)")]
-  end
-    Internet(("Internet")) -- HTTPS (Port 443) --> Caddy
-    Caddy -- Auth Callback --> OAuth2
-    OAuth2 -. OAuth2 Flow .-> GoogleSSO
-    qBittorrent --- Gluetun
-    Prowlarr --- Gluetun
-    Byparr --- Gluetun
-    Caddy -- SSO Protected --> Homepage & Seerr
-    Caddy -- Native Auth --> Jellyfin & Sonarr & Radarr & Bazarr & qBittorrent & Prowlarr
-    Gluetun == WireGuard Tunnel ==> VPNServer(("VPN Server"))
-    Prowlarr -. Bypass Captchas .-> Byparr
-    Recyclarr -. Sync Configs .-> Sonarr & Radarr
-    Jellyfin -. Read Only .-> MediaStorage
-    Sonarr --> MediaStorage
-    Radarr --> MediaStorage
-    Bazarr --> MediaStorage
-    qBittorrent --> MediaStorage
+<svg viewBox="0 0 1320 662" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Media homelab architecture diagram">
+  <rect x="0" y="0" width="1320" height="662" fill="#F5F6F8"/>
+  <rect x="30" y="20" width="150" height="40" rx="9" fill="#F5F6F8" stroke="#8A94A6" stroke-width="1.4" stroke-dasharray="5 4"/>
+  <text x="46" y="44" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="600" fill="#1A2233">LAN Client</text>
+  <rect x="440" y="20" width="170" height="40" rx="9" fill="#F5F6F8" stroke="#8A94A6" stroke-width="1.4" stroke-dasharray="5 4"/>
+  <text x="456" y="44" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="600" fill="#1A2233">Tailscale Mesh</text>
+  <rect x="1040" y="20" width="190" height="44" rx="9" fill="#F5F6F8" stroke="#8A94A6" stroke-width="1.4" stroke-dasharray="5 4"/>
+  <text x="1056" y="39" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="600" fill="#1A2233">Vault</text>
+  <text x="1056" y="55" font-family="Helvetica, Arial, sans-serif" font-size="10" fill="#5B667A">mst-vault, optional</text>
+  <rect x="30" y="104" width="170" height="50" rx="9" fill="#FFFFFF" stroke="#D6DCE5" stroke-width="1.4"/>
+  <rect x="30" y="107" width="5" height="44" rx="2" fill="#3B6FD1"/>
+  <text x="44" y="133" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="600" fill="#1A2233">Caddy</text>
+  <rect x="440" y="104" width="170" height="50" rx="9" fill="#FFFFFF" stroke="#D6DCE5" stroke-width="1.4"/>
+  <rect x="440" y="107" width="5" height="44" rx="2" fill="#3B6FD1"/>
+  <text x="454" y="133" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="600" fill="#1A2233">Tailscale</text>
+  <rect x="30" y="214" width="150" height="46" rx="9" fill="#FFFFFF" stroke="#D6DCE5" stroke-width="1.4"/>
+  <rect x="30" y="217" width="5" height="40" rx="2" fill="#7A5AC7"/>
+  <text x="44" y="241" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="600" fill="#1A2233">Homepage</text>
+  <rect x="220" y="214" width="150" height="46" rx="9" fill="#FFFFFF" stroke="#D6DCE5" stroke-width="1.4"/>
+  <rect x="220" y="217" width="5" height="40" rx="2" fill="#7A5AC7"/>
+  <text x="234" y="241" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="600" fill="#1A2233">Seerr</text>
+  <rect x="30" y="306" width="150" height="46" rx="9" fill="#FFFFFF" stroke="#D6DCE5" stroke-width="1.4"/>
+  <rect x="30" y="309" width="5" height="40" rx="2" fill="#4B4FBD"/>
+  <text x="44" y="333" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="600" fill="#1A2233">Sonarr</text>
+  <rect x="220" y="306" width="150" height="46" rx="9" fill="#FFFFFF" stroke="#D6DCE5" stroke-width="1.4"/>
+  <rect x="220" y="309" width="5" height="40" rx="2" fill="#4B4FBD"/>
+  <text x="234" y="333" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="600" fill="#1A2233">Radarr</text>
+  <rect x="410" y="306" width="150" height="46" rx="9" fill="#FFFFFF" stroke="#D6DCE5" stroke-width="1.4"/>
+  <rect x="410" y="309" width="5" height="40" rx="2" fill="#4B4FBD"/>
+  <text x="424" y="333" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="600" fill="#1A2233">Bazarr</text>
+  <rect x="600" y="306" width="150" height="46" rx="9" fill="#FFFFFF" stroke="#D6DCE5" stroke-width="1.4"/>
+  <rect x="600" y="309" width="5" height="40" rx="2" fill="#4B4FBD"/>
+  <text x="614" y="333" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="600" fill="#1A2233">Prowlarr</text>
+  <rect x="800" y="306" width="150" height="46" rx="9" fill="#FFFFFF" stroke="#D6DCE5" stroke-width="1.4"/>
+  <rect x="800" y="309" width="5" height="40" rx="2" fill="#4B4FBD"/>
+  <text x="814" y="333" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="600" fill="#1A2233">Byparr</text>
+  <rect x="1040" y="306" width="150" height="46" rx="9" fill="#FFFFFF" stroke="#D6DCE5" stroke-width="1.4"/>
+  <rect x="1040" y="309" width="5" height="40" rx="2" fill="#4B4FBD"/>
+  <text x="1054" y="333" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="600" fill="#1A2233">Recyclarr</text>
+  <rect x="30" y="404" width="170" height="46" rx="9" fill="#FFFFFF" stroke="#D6DCE5" stroke-width="1.4"/>
+  <rect x="30" y="407" width="5" height="40" rx="2" fill="#2F8F46"/>
+  <text x="44" y="431" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="600" fill="#1A2233">qBittorrent</text>
+  <rect x="240" y="404" width="140" height="46" rx="9" fill="#FFFFFF" stroke="#D6DCE5" stroke-width="1.4"/>
+  <rect x="240" y="407" width="5" height="40" rx="2" fill="#2F8F46"/>
+  <text x="254" y="431" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="600" fill="#1A2233">ClamAV</text>
+  <rect x="420" y="404" width="170" height="46" rx="9" fill="#FFFFFF" stroke="#D6DCE5" stroke-width="1.4"/>
+  <rect x="420" y="407" width="5" height="40" rx="2" fill="#2F8F46"/>
+  <text x="434" y="424" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="600" fill="#1A2233">Gluetun</text>
+  <text x="434" y="440" font-family="Helvetica, Arial, sans-serif" font-size="10" fill="#5B667A">profile: vpn</text>
+  <rect x="630" y="404" width="160" height="46" rx="9" fill="#F5F6F8" stroke="#8A94A6" stroke-width="1.4" stroke-dasharray="5 4"/>
+  <text x="646" y="431" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="600" fill="#1A2233">VPN Provider</text>
+  <rect x="30" y="496" width="150" height="46" rx="9" fill="#FFFFFF" stroke="#D6DCE5" stroke-width="1.4"/>
+  <rect x="30" y="499" width="5" height="40" rx="2" fill="#C9711A"/>
+  <text x="44" y="523" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="600" fill="#1A2233">Jellyfin</text>
+  <rect x="220" y="496" width="160" height="46" rx="9" fill="#FFFFFF" stroke="#D6DCE5" stroke-width="1.4"/>
+  <rect x="220" y="499" width="5" height="40" rx="2" fill="#C9711A"/>
+  <text x="234" y="523" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="600" fill="#1A2233">dovi_convert</text>
+  <rect x="30" y="588" width="760" height="54" rx="9" fill="#FFFFFF" stroke="#D6DCE5" stroke-width="1.4"/>
+  <rect x="30" y="591" width="5" height="48" rx="2" fill="#586174"/>
+  <text x="44" y="612" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="600" fill="#1A2233">Media Storage</text>
+  <text x="44" y="628" font-family="Helvetica, Arial, sans-serif" font-size="10" fill="#5B667A">$MEDIA_DATA_PATH</text>
+  <path d="M105,60 L115,104" stroke="#94A0B4" stroke-width="1.6" fill="none"/>
+  <polygon points="110.5,96 115,104 119.5,96" fill="#94A0B4"/>
+  <rect x="67.35" y="69" width="75.3" height="13" fill="#F5F6F8"/>
+  <text x="105" y="80" font-family="Helvetica, Arial, sans-serif" font-size="10" fill="#5B667A" text-anchor="middle">*.media.lan</text>
+  <path d="M525,60 L525,104" stroke="#94A0B4" stroke-width="1.6" fill="none"/>
+  <polygon points="520.5,96 525,104 529.5,96" fill="#94A0B4"/>
+  <rect x="496.8" y="69" width="56.4" height="13" fill="#F5F6F8"/>
+  <text x="525" y="80" font-family="Helvetica, Arial, sans-serif" font-size="10" fill="#5B667A" text-anchor="middle">*.ts.net</text>
+  <path d="M440,129 L200,129" stroke="#94A0B4" stroke-width="1.6" fill="none" stroke-dasharray="4 4"/>
+  <polygon points="208,124.5 200,129 208,133.5" fill="#94A0B4"/>
+  <path d="M115,154 L12,196" stroke="#2F8F46" stroke-width="1.6" fill="none"/>
+  <path d="M12,196 L12,486" stroke="#2F8F46" stroke-width="1.6" fill="none"/>
+  <rect x="53" y="177" width="88" height="13" fill="#F5F6F8"/>
+  <text x="56" y="188" font-family="Helvetica, Arial, sans-serif" font-size="10" fill="#2F8F46" text-anchor="start">reverse_proxy</text>
+  <path d="M12,196 L90,196 L90,214" stroke="#2F8F46" stroke-width="1.6" fill="none"/>
+  <polygon points="85.5,206 90,214 94.5,206" fill="#2F8F46"/>
+  <path d="M12,196 L295,196 L295,214" stroke="#2F8F46" stroke-width="1.6" fill="none"/>
+  <polygon points="290.5,206 295,214 299.5,206" fill="#2F8F46"/>
+  <path d="M12,296 L105,296 L105,306" stroke="#2F8F46" stroke-width="1.6" fill="none"/>
+  <polygon points="100.5,298 105,306 109.5,298" fill="#2F8F46"/>
+  <path d="M12,296 L295,296 L295,306" stroke="#2F8F46" stroke-width="1.6" fill="none"/>
+  <polygon points="290.5,298 295,306 299.5,298" fill="#2F8F46"/>
+  <path d="M12,296 L485,296 L485,306" stroke="#2F8F46" stroke-width="1.6" fill="none"/>
+  <polygon points="480.5,298 485,306 489.5,298" fill="#2F8F46"/>
+  <path d="M12,296 L675,296 L675,306" stroke="#2F8F46" stroke-width="1.6" fill="none"/>
+  <polygon points="670.5,298 675,306 679.5,298" fill="#2F8F46"/>
+  <path d="M12,392 L100,392 L100,404" stroke="#2F8F46" stroke-width="1.6" fill="none"/>
+  <polygon points="95.5,396 100,404 104.5,396" fill="#2F8F46"/>
+  <path d="M12,486 L90,486 L90,496" stroke="#2F8F46" stroke-width="1.6" fill="none"/>
+  <polygon points="85.5,488 90,496 94.5,488" fill="#2F8F46"/>
+  <path d="M12,486 L300,486 L300,496" stroke="#2F8F46" stroke-width="1.6" fill="none"/>
+  <polygon points="295.5,488 300,496 304.5,488" fill="#2F8F46"/>
+  <path d="M525,154 L525,206 L966,206" stroke="#94A0B4" stroke-width="1.6" fill="none" stroke-dasharray="4 4"/>
+  <path d="M966,206 L966,480" stroke="#94A0B4" stroke-width="1.6" fill="none" stroke-dasharray="4 4"/>
+  <path d="M966,206 L370,237" stroke="#94A0B4" stroke-width="1.6" fill="none" stroke-dasharray="4 4"/>
+  <polygon points="378,232.5 370,237 378,241.5" fill="#94A0B4"/>
+  <rect x="925.2" y="187" width="81.6" height="13" fill="#F5F6F8"/>
+  <text x="966" y="198" font-family="Helvetica, Arial, sans-serif" font-size="10" fill="#5B667A" text-anchor="middle">direct serve</text>
+  <path d="M966,206 L120,206 L120,214" stroke="#94A0B4" stroke-width="1.6" fill="none" stroke-dasharray="4 4"/>
+  <polygon points="115.5,206 120,214 124.5,206" fill="#94A0B4"/>
+  <path d="M966,398 L130,398 L130,404" stroke="#94A0B4" stroke-width="1.6" fill="none" stroke-dasharray="4 4"/>
+  <polygon points="125.5,396 130,404 134.5,396" fill="#94A0B4"/>
+  <path d="M966,480 L120,480 L120,496" stroke="#94A0B4" stroke-width="1.6" fill="none" stroke-dasharray="4 4"/>
+  <polygon points="115.5,488 120,496 124.5,488" fill="#94A0B4"/>
+  <path d="M295,260 L295,306" stroke="#2F8F46" stroke-width="1.6" fill="none"/>
+  <polygon points="290.5,298 295,306 299.5,298" fill="#2F8F46"/>
+  <path d="M295,260 L295,288 L105,288 L105,306" stroke="#2F8F46" stroke-width="1.6" fill="none"/>
+  <polygon points="100.5,298 105,306 109.5,298" fill="#2F8F46"/>
+  <path d="M220,237 L205,237 L205,519 L180,519" stroke="#2F8F46" stroke-width="1.6" fill="none"/>
+  <polygon points="188,514.5 180,519 188,523.5" fill="#2F8F46"/>
+  <path d="M1115,306 L1115,280 L105,280 L105,306" stroke="#94A0B4" stroke-width="1.6" fill="none" stroke-dasharray="4 4"/>
+  <polygon points="100.5,298 105,306 109.5,298" fill="#94A0B4"/>
+  <path d="M1115,280 L295,280 L295,306" stroke="#94A0B4" stroke-width="1.6" fill="none" stroke-dasharray="4 4"/>
+  <polygon points="290.5,298 295,306 299.5,298" fill="#94A0B4"/>
+  <rect x="496.05" y="271" width="88" height="13" fill="#F5F6F8"/>
+  <text x="540" y="282" font-family="Helvetica, Arial, sans-serif" font-size="10" fill="#5B667A" text-anchor="middle">sync profiles</text>
+  <path d="M105,352 L105,372 L675,372 L675,306" stroke="#2F8F46" stroke-width="1.6" fill="none"/>
+  <path d="M295,352 L295,372 L675,372 L675,306" stroke="#2F8F46" stroke-width="1.6" fill="none"/>
+  <polygon points="670.5,298 675,306 679.5,298" fill="#2F8F46"/>
+  <path d="M105,352 L105,384 L115,384 L115,404" stroke="#2F8F46" stroke-width="1.6" fill="none"/>
+  <path d="M295,352 L295,384 L115,384 L115,404" stroke="#2F8F46" stroke-width="1.6" fill="none"/>
+  <polygon points="110.5,396 115,404 119.5,396" fill="#2F8F46"/>
+  <path d="M750,329 L800,329" stroke="#94A0B4" stroke-width="1.6" fill="none" stroke-dasharray="4 4"/>
+  <polygon points="792,324.5 800,329 792,333.5" fill="#94A0B4"/>
+  <rect x="727.9" y="308" width="94.2" height="13" fill="#F5F6F8"/>
+  <text x="775" y="319" font-family="Helvetica, Arial, sans-serif" font-size="10" fill="#5B667A" text-anchor="middle">bypass captcha</text>
+  <path d="M115,450 L115,468 L505,468 L505,450" stroke="#C9711A" stroke-width="1.6" fill="none" stroke-dasharray="4 4"/>
+  <polygon points="500.5,458 505,450 509.5,458" fill="#C9711A"/>
+  <path d="M675,352 L675,478 L540,478 L540,450" stroke="#C9711A" stroke-width="1.6" fill="none" stroke-dasharray="4 4"/>
+  <path d="M875,352 L875,488 L560,488 L560,450" stroke="#C9711A" stroke-width="1.6" fill="none" stroke-dasharray="4 4"/>
+  <rect x="106.8" y="471" width="56.4" height="13" fill="#F5F6F8"/>
+  <text x="135" y="482" font-family="Helvetica, Arial, sans-serif" font-size="10" fill="#C9711A" text-anchor="middle">optional</text>
+  <path d="M590,427 L630,427" stroke="#C9711A" stroke-width="2" fill="none"/>
+  <polygon points="622,422.5 630,427 622,431.5" fill="#C9711A"/>
+  <rect x="576.15" y="406" width="62.7" height="13" fill="#F5F6F8"/>
+  <text x="607.5" y="417" font-family="Helvetica, Arial, sans-serif" font-size="10" fill="#C9711A" text-anchor="middle">WireGuard</text>
+  <path d="M200,427 L240,427" stroke="#94A0B4" stroke-width="1.6" fill="none" stroke-dasharray="4 4"/>
+  <polygon points="232,422.5 240,427 232,431.5" fill="#94A0B4"/>
+  <rect x="196.9" y="406" width="31.2" height="13" fill="#F5F6F8"/>
+  <text x="212.5" y="417" font-family="Helvetica, Arial, sans-serif" font-size="10" fill="#5B667A" text-anchor="middle">scan</text>
+  <path d="M180,237 L220,237" stroke="#94A0B4" stroke-width="1.6" fill="none" stroke-dasharray="4 4"/>
+  <polygon points="212,232.5 220,237 212,241.5" fill="#94A0B4"/>
+  <path d="M105,214 L105,198 L1215,198 L1215,519" stroke="#94A0B4" stroke-width="1.6" fill="none" stroke-dasharray="4 4"/>
+  <path d="M1215,519 L180,519" stroke="#94A0B4" stroke-width="1.6" fill="none" stroke-dasharray="4 4"/>
+  <polygon points="188,514.5 180,519 188,523.5" fill="#94A0B4"/>
+  <path d="M1215,519 L1215,427 L200,427" stroke="#94A0B4" stroke-width="1.6" fill="none" stroke-dasharray="4 4"/>
+  <polygon points="208,422.5 200,427 208,431.5" fill="#94A0B4"/>
+  <rect x="1158.45" y="177" width="113.1" height="13" fill="#F5F6F8"/>
+  <text x="1215" y="188" font-family="Helvetica, Arial, sans-serif" font-size="10" fill="#5B667A" text-anchor="middle">dashboard widgets</text>
+  <path d="M1135,64 L1135,62 L1270,62 L1270,129" stroke="#C9711A" stroke-width="1.6" fill="none" stroke-dasharray="4 4"/>
+  <path d="M1270,129 L610,129" stroke="#C9711A" stroke-width="1.6" fill="none" stroke-dasharray="4 4"/>
+  <polygon points="618,124.5 610,129 618,133.5" fill="#C9711A"/>
+  <path d="M1270,129 L1270,427 L590,427" stroke="#C9711A" stroke-width="1.6" fill="none" stroke-dasharray="4 4"/>
+  <polygon points="598,422.5 590,427 598,431.5" fill="#C9711A"/>
+  <rect x="1244.95" y="41" width="50.1" height="13" fill="#F5F6F8"/>
+  <text x="1270" y="52" font-family="Helvetica, Arial, sans-serif" font-size="10" fill="#C9711A" text-anchor="middle">secrets</text>
+  <path d="M105,352 L105,360 L210,360 L210,588" stroke="#2F8F46" stroke-width="1.6" fill="none"/>
+  <polygon points="205.5,580 210,588 214.5,580" fill="#2F8F46"/>
+  <path d="M295,352 L295,366 L400,366 L400,588" stroke="#2F8F46" stroke-width="1.6" fill="none"/>
+  <polygon points="395.5,580 400,588 404.5,580" fill="#2F8F46"/>
+  <path d="M485,352 L485,372 L610,372 L610,588" stroke="#2F8F46" stroke-width="1.6" fill="none"/>
+  <polygon points="605.5,580 610,588 614.5,580" fill="#2F8F46"/>
+  <path d="M115,450 L115,460 L200,460 L200,588" stroke="#2F8F46" stroke-width="1.6" fill="none"/>
+  <polygon points="195.5,580 200,588 204.5,580" fill="#2F8F46"/>
+  <path d="M105,542 L105,580 L105,588" stroke="#94A0B4" stroke-width="1.6" fill="none" stroke-dasharray="4 4"/>
+  <polygon points="100.5,580 105,588 109.5,580" fill="#94A0B4"/>
+  <rect x="131.65" y="569" width="62.7" height="13" fill="#F5F6F8"/>
+  <text x="163" y="580" font-family="Helvetica, Arial, sans-serif" font-size="10" fill="#5B667A" text-anchor="middle">read only</text>
+  <path d="M300,542 L300,584 L300,588" stroke="#2F8F46" stroke-width="1.6" fill="none"/>
+  <polygon points="295.5,580 300,588 304.5,580" fill="#2F8F46"/>
+</svg>
 
-     Gluetun:::vpn
-     qBittorrent:::app
-     Prowlarr:::app
-     Byparr:::app
-     Jellyfin:::app
-     Seerr:::app
-     Homepage:::app
-     Sonarr:::app
-     Radarr:::app
-     Bazarr:::app
-     Recyclarr:::app
-     Caddy:::proxy
-     OAuth2:::proxy
-     GoogleSSO:::external
-     MediaStorage:::storage
-     Internet:::external
-     VPNServer:::external
-    classDef proxy fill:#2e6da4,stroke:#171d2c,stroke-width:2px,color:#fff
-    classDef app fill:#3f5fe0,stroke:#171d2c,stroke-width:1px,color:#fff
-    classDef vpn fill:#8b5cf6,stroke:#171d2c,stroke-width:2px,color:#fff
-    classDef storage fill:#171d2c,stroke:#262f45,stroke-width:2px,color:#e8ebf3
-    classDef external fill:#f4f6fb,stroke:#5b6480,stroke-width:1px,stroke-dasharray: 5 5,color:#1a2036
-    style Gluetun fill:#5b6480
-    style qBittorrent fill:#171d2c
-    style Prowlarr fill:#171d2c
-    style Byparr fill:#171d2c
-    style VPNNet fill:#757575
-    style GoogleSSO fill:#FFCDD2
-    style DockerNet fill:#616161
-    style Internet fill:#C8E6C9
-    style Host fill:#424242
-```
+**Reading the diagram:** solid lines are the main request/download/import path;
+dashed lines are secondary relationships (sync, scan, remote-access fan-out,
+secrets). Dashed-border boxes are external to this compose file (Tailscale's
+own network, the VPN provider, and the separate `mst-vault` project).
+
+| | |
+|---|---|
+| 🔵 blue | Access — Caddy, Tailscale |
+| 🟣 violet | Requests & dashboard — Seerr, Homepage |
+| 🟪 indigo | Automation — Sonarr, Radarr, Bazarr, Prowlarr, Byparr, Recyclarr |
+| 🟢 green | Downloads & security — qBittorrent, Gluetun, ClamAV |
+| 🟠 orange | Media & playback — Jellyfin, dovi_convert |
+| ⬛ slate | Storage |
+| ⚪ dashed | External to this stack — LAN/Tailscale clients, VPN provider, Vault |
 
 ## Services
 
