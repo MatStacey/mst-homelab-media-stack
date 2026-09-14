@@ -168,7 +168,11 @@ services:
     volumes:
       - ./config/clamav:/var/lib/clamav
     healthcheck:
-      test: ["CMD-SHELL", "test -S /run/clamav/clamd.sock"]
+      # clamd listens on /tmp/clamd.sock (per this image's own clamd.conf),
+      # not /run/clamav/clamd.sock - use the image's own healthcheck script,
+      # which PINGs clamd over its TCP socket instead of relying on the
+      # local socket path.
+      test: ["CMD", "/usr/local/bin/clamdcheck.sh"]
       interval: 5m
       timeout: 30s
       retries: 3
@@ -487,7 +491,7 @@ services:
     # notes for one-time account setup (auth key, enabling HTTPS Certificates).
     image: tailscale/tailscale:latest
     container_name: tailscale
-    hostname: media-stack
+    hostname: homelab
     networks:
       - homelab_net
     cap_add:
