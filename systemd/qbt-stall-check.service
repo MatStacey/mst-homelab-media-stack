@@ -1,0 +1,12 @@
+[Unit]
+Description=Report qBittorrent transfer health to Uptime Kuma
+
+[Service]
+Type=simple
+WorkingDirectory=%h/vcs/personal/mst-homelab-media-stack
+ExecStart=%h/vcs/personal/mst-homelab-media-stack/scripts/qbt-stall-check.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target
