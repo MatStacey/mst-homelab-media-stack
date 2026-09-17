@@ -58,6 +58,10 @@ status.media.lan {
 	reverse_proxy homepage:3000
 }
 
+uptime.media.lan {
+	reverse_proxy uptime-kuma:3001
+}
+
 # Same landing page, reachable by raw IP with no hostname/DNS/certificate
 # needed - for devices that can't resolve *.media.lan (see README's LAN
 # access notes) or don't handle the local CA. Plain HTTP, no TLS: an IP

@@ -545,3 +545,52 @@ services:
     security_opt:
       - no-new-privileges:true
     restart: unless-stopped
+
+  # Watches diun/images.yml for newer upstream releases and emails when one
+  # appears - never pulls or restarts anything itself. See diun/diun.yml
+  # for why it's a file-based image list rather than the Docker provider
+  # (which would need docker.sock).
+  diun:
+    image: crazymax/diun:4.29.0
+    container_name: diun
+    networks:
+      - homelab_net
+    environment:
+      - TZ=${TZ}
+      - LOG_LEVEL=info
+      - DIUN_NOTIF_MAIL_HOST=${SMTP_HOST:-}
+      - DIUN_NOTIF_MAIL_PORT=${SMTP_PORT:-587}
+      - DIUN_NOTIF_MAIL_SSL=${SMTP_SSL:-false}
+      - DIUN_NOTIF_MAIL_USERNAME=${SMTP_USERNAME:-}
+      - DIUN_NOTIF_MAIL_PASSWORD=${SMTP_PASSWORD:-}
+      - DIUN_NOTIF_MAIL_FROM=${SMTP_FROM:-}
+      - DIUN_NOTIF_MAIL_TO=${SMTP_TO:-}
+    volumes:
+      - ./diun/diun.yml:/diun.yml:ro
+      - ./diun/images.yml:/images.yml:ro
+      - ./config/diun:/data
+    logging: *default-logging
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
+  uptime-kuma:
+    # Uptime/health monitoring for every service in this stack, with email
+    # alerts on failure. Monitors and notification targets are configured
+    # once through its own web UI (no file-based config) - see README's
+    # monitoring notes for first-run setup.
+    image: louislam/uptime-kuma:1.23.16
+    container_name: uptime-kuma
+    networks:
+      - homelab_net
+    volumes:
+      - ./config/uptime-kuma:/app/data
+    healthcheck:
+      test: ["CMD", "node", "extra/healthcheck.js"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    logging: *default-logging
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped

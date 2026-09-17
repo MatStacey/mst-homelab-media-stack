@@ -1,0 +1,20 @@
+# Diun watches the images listed in diun/images.yml for newer upstream
+# releases and emails when one appears - never pulls or restarts anything
+# itself, matching this stack's existing pin-deliberately convention (see
+# gluetun's own pinning comment in docker-compose.yml).
+#
+# No Docker provider/socket here on purpose - same reasoning as Homepage
+# not mounting docker.sock (see its own comment in docker-compose.yml).
+# The "file" provider below reads an explicit image list instead.
+#
+# Mail notification settings (host/port/credentials/recipients) come from
+# DIUN_NOTIF_MAIL_* environment variables set on the diun service in
+# docker-compose.yml, not from this file.
+watch:
+  workers: 10
+  schedule: "0 8 * * *"
+  firstCheckNotif: false
+
+providers:
+  file:
+    filename: /images.yml
