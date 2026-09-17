@@ -467,7 +467,7 @@ services:
       # whose Host header isn't in this list, and needs an exact match
       # INCLUDING the port for anything not on 443/80 (confirmed live: a
       # bare "media-stack.<tailnet>.ts.net" 400'd until ":3000" was added).
-      - HOMEPAGE_ALLOWED_HOSTS=status.media.lan,homelab.tail1525fe.ts.net:3000
+      - HOMEPAGE_ALLOWED_HOSTS=status.media.lan,homelab.tail1525fe.ts.net:3000,homepage:3000
     volumes:
       - ./config/homepage:/app/config
     healthcheck:
