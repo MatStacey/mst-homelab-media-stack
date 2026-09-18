@@ -39,8 +39,17 @@ seerr.media.lan {
 	reverse_proxy seerr:5055
 }
 
+# qBittorrent's WebUI has a known bug: once its session cookie expires, the
+# root page it served while still logged in is stale (references a session
+# that's now dead), and its JS shows raw "Unauthorized" instead of the login
+# form - a browser reload (F5) just re-serves that same cached copy, only a
+# fresh address-bar navigation forces a real re-fetch. no_store stops the
+# root page from being cached at all, so every load (including F5) fetches
+# fresh and correctly shows the login form when logged out.
 qbittorrent.media.lan {
 	reverse_proxy qbittorrent:8080
+	@root path /
+	header @root Cache-Control "no-store"
 }
 
 # Static landing page - a simple tile grid linking to every service, so
