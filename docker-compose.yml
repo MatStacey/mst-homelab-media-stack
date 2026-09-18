@@ -163,6 +163,8 @@ services:
   clamav:
     image: clamav/clamav:stable
     container_name: clamav
+    labels:
+      - com.centurylinklabs.watchtower.enable=true
     networks:
       - homelab_net
     volumes:
@@ -492,6 +494,8 @@ services:
     image: tailscale/tailscale:latest
     container_name: tailscale
     hostname: homelab
+    labels:
+      - com.centurylinklabs.watchtower.enable=true
     networks:
       - homelab_net
     cap_add:
@@ -590,6 +594,32 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+    logging: *default-logging
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
+  # Auto-updates only the services labeled watchtower.enable=true - clamav
+  # and tailscale, both already on floating tags (:stable/:latest) rather
+  # than pinned exact versions, so there's nothing riskier being made
+  # automatic here. Everything else keeps the deliberate pin-then-bump flow
+  # (Diun notifies, docker-compose.yml's tag gets bumped by hand).
+  watchtower:
+    image: containrrr/watchtower:1.7.1
+    container_name: watchtower
+    networks:
+      - homelab_net
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - TZ=${TZ}
+      # This image's bundled Docker client defaults to an API version too old
+      # for current Docker Engine releases to accept - pin one explicitly.
+      - DOCKER_API_VERSION=1.41
+      - WATCHTOWER_LABEL_ENABLE=true
+      - WATCHTOWER_SCHEDULE=0 0 4 * * *
+      - WATCHTOWER_CLEANUP=true
+      - WATCHTOWER_NOTIFICATION_URL=${WATCHTOWER_NOTIFICATION_URL:-}
     logging: *default-logging
     security_opt:
       - no-new-privileges:true
