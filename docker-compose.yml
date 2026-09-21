@@ -245,9 +245,10 @@ services:
     networks:
       - homelab_net
     healthcheck:
+      # /health loads google.com in a browser - ~15s through the VPN.
       test: ["CMD", "curl", "-f", "http://localhost:8191/health"]
-      interval: 30s
-      timeout: 15s
+      interval: 60s
+      timeout: 45s
       retries: 3
     logging: *default-logging
     security_opt:
@@ -263,9 +264,10 @@ services:
       gluetun:
         condition: service_healthy
     healthcheck:
+      # /health loads google.com in a browser - ~15s through the VPN.
       test: ["CMD", "curl", "-f", "http://localhost:8191/health"]
-      interval: 30s
-      timeout: 15s
+      interval: 60s
+      timeout: 45s
       retries: 3
     logging: *default-logging
     security_opt:
