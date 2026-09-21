@@ -599,6 +599,32 @@ services:
       - no-new-privileges:true
     restart: unless-stopped
 
+  # Removes and blocklists stalled, metadata-stuck and slow downloads from
+  # qBittorrent, then triggers a fresh search in Sonarr/Radarr. Sonarr,
+  # Radarr and qBittorrent connections are configured once in its web UI.
+  cleanuparr:
+    image: ghcr.io/cleanuparr/cleanuparr:2.10.6
+    container_name: cleanuparr
+    networks:
+      - homelab_net
+    environment:
+      - PORT=11011
+      - PUID=1000
+      - PGID=1000
+      - TZ=${TZ}
+    volumes:
+      - ./config/cleanuparr:/config
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11011/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
+    logging: *default-logging
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
   # Auto-updates only the services labeled watchtower.enable=true - clamav
   # and tailscale, both already on floating tags (:stable/:latest) rather
   # than pinned exact versions, so there's nothing riskier being made
