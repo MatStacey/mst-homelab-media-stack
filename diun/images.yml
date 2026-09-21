@@ -60,6 +60,10 @@
   watch_repo: true
   max_tags: 5
   include_tags: ['^[0-9]+\.[0-9]+\.[0-9]+$']
+- name: netdata/netdata:v2.11.1
+  watch_repo: true
+  max_tags: 5
+  include_tags: ['^v[0-9]+\.[0-9]+\.[0-9]+$']
 - name: crazymax/diun:4.29.0
   watch_repo: true
   max_tags: 5

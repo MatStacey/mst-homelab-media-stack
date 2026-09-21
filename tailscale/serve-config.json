@@ -5,7 +5,8 @@
     "5055": { "HTTPS": true },
     "8080": { "HTTPS": true },
     "3000": { "HTTPS": true },
-    "3001": { "HTTPS": true }
+    "3001": { "HTTPS": true },
+    "19999": { "HTTPS": true }
   },
   "Web": {
     "${TS_CERT_DOMAIN}:443": {
@@ -25,6 +26,9 @@
     },
     "${TS_CERT_DOMAIN}:3001": {
       "Handlers": { "/": { "Proxy": "http://uptime-kuma:3001" } }
+    },
+    "${TS_CERT_DOMAIN}:19999": {
+      "Handlers": { "/": { "Proxy": "http://netdata:19999" } }
     }
   }
 }

@@ -627,6 +627,36 @@ services:
       - no-new-privileges:true
     restart: unless-stopped
 
+  # Per-container network/CPU/memory dashboards, incl. qBittorrent and
+  # Jellyfin bandwidth. docker.sock is read-only, used only for container
+  # discovery and name resolution.
+  netdata:
+    image: netdata/netdata:v2.11.1
+    container_name: netdata
+    hostname: netdata
+    networks:
+      - homelab_net
+    cap_add:
+      - SYS_PTRACE
+    volumes:
+      - ./config/netdata/config:/etc/netdata
+      - ./config/netdata/lib:/var/lib/netdata
+      - ./config/netdata/cache:/var/cache/netdata
+      - /etc/passwd:/host/etc/passwd:ro
+      - /etc/group:/host/etc/group:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /sys/fs/cgroup:/host/sys/fs/cgroup:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:19999/api/v1/info"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    logging: *default-logging
+    security_opt:
+      - apparmor:unconfined
+      - no-new-privileges:true
+    restart: unless-stopped
+
   # Auto-updates only the services labeled watchtower.enable=true - clamav
   # and tailscale, both already on floating tags (:stable/:latest) rather
   # than pinned exact versions, so there's nothing riskier being made
