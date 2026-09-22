@@ -3,7 +3,8 @@
 # that Caddy serves statically, for Homepage's League of Legends customapi
 # widget to poll (Riot's API can't be queried directly from a single
 # customapi call - it needs two chained requests across two different
-# regional hosts).
+# regional hosts). Also mirrors the official rank emblem for the current
+# tier from Community Dragon, used as that service's Homepage icon.
 #
 # RIOT_DEV_API_KEY is a development key from the Riot Developer Portal and
 # expires 24h after generation. Once it expires this script starts logging
@@ -22,6 +23,13 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.." || exit 1
 
 UPDATE_INTERVAL_SECS=600
 OUTPUT_FILE="caddy/site/riot-stats.json"
+BADGE_OUTPUT_FILE="config/homepage/icons/riot-rank-badge.png"
+BADGE_BASE_URL="https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-static-assets/global/default/images/ranked-emblem"
+# Community Dragon's emblem PNGs sit on a mostly-empty ~2560x1440 canvas -
+# too small a fraction of the frame to read at icon size, so trim the
+# transparent padding via a throwaway ImageMagick container (avoids adding
+# an image-processing dependency to the host).
+IMAGEMAGICK_IMAGE="dpokidov/imagemagick:7.1.2-12"
 # Derived from RIOT_TAG_LINE=EUW - adjust both if your account is on a
 # different platform (e.g. na1/americas, kr/asia) - see:
 # https://developer.riotgames.com/docs/lol#routing-values
@@ -79,6 +87,20 @@ else:
 
 json.dump(stats, sys.stdout)
 ' > "$tmp_file" && mv "$tmp_file" "$OUTPUT_FILE"
+
+  # Official Riot rank emblem for the current Solo/Duo tier - no emblem
+  # exists for Unranked, so the badge just keeps its last-known image then.
+  local tier
+  tier="$(echo "$entries" | jq -r '.[] | select(.queueType == "RANKED_SOLO_5x5") | .tier // empty' | tr '[:upper:]' '[:lower:]')"
+  if [ -n "$tier" ]; then
+    local badge_raw="${BADGE_OUTPUT_FILE}.raw.tmp" badge_trimmed="${BADGE_OUTPUT_FILE}.tmp"
+    curl -sf "${BADGE_BASE_URL}/emblem-${tier}.png" -o "$badge_raw" \
+      && docker run --rm --entrypoint magick --user "$(id -u):$(id -g)" \
+           -v "$(pwd)/config/homepage/icons:/data" "$IMAGEMAGICK_IMAGE" \
+           "/data/$(basename "$badge_raw")" -trim +repage "/data/$(basename "$badge_trimmed")" \
+      && mv "$badge_trimmed" "$BADGE_OUTPUT_FILE"
+    rm -f "$badge_raw"
+  fi
 }
 
 main() {

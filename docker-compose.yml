@@ -474,6 +474,7 @@ services:
       - HOMEPAGE_ALLOWED_HOSTS=status.media.lan,homelab.tail1525fe.ts.net:3000,homepage:3000
     volumes:
       - ./config/homepage:/app/config
+      - ./config/homepage/icons:/app/public/icons
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/healthcheck"]
       interval: 30s
