@@ -1,0 +1,12 @@
+[Unit]
+Description=Update League of Legends ranked stats for the Homepage widget
+
+[Service]
+Type=simple
+WorkingDirectory=%h/vcs/personal/mst-homelab-media-stack
+ExecStart=%h/vcs/personal/mst-homelab-media-stack/scripts/riot-stats-update.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target
