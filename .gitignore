@@ -1,7 +1,7 @@
 .vscode
 .env
 /config/
-/caddy/site/riot-stats.json
+/caddy/site/riot-stats-*.json
 .DS_Store
 *.log
 __pycache__/
