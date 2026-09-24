@@ -39,6 +39,7 @@ PATCH_NOTES_URL="${PATCH_NOTES_BASE_URL}/en-gb/news/tags/patch-notes/"
 PATCH_NOTES_OUTPUT_FILE="${STATS_OUTPUT_DIR}/lol-patch-notes.json"
 PATCH_NOTES_HTML_FILE="${STATS_OUTPUT_DIR}/lol-patch-notes.html"
 USER_AGENT="Mozilla/5.0"
+SERVER_STATUS_OUTPUT_FILE="${STATS_OUTPUT_DIR}/lol-server-status.json"
 # Derived from RIOT_TAG_LINE=EUW - adjust both if your accounts are on a
 # different platform (e.g. na1/americas, kr/asia) - see:
 # https://developer.riotgames.com/docs/lol#routing-values. All accounts
@@ -241,6 +242,42 @@ with open(json_out, "w") as f:
   echo "$(date -Is) riot-stats-update: wrote $PATCH_NOTES_OUTPUT_FILE and $PATCH_NOTES_HTML_FILE"
 }
 
+# Platform status (maintenances/incidents) for RIOT_PLATFORM, e.g. EUW1.
+fetch_server_status() {
+  local api_key status_page tmp_file
+  api_key="$(env_var RIOT_DEV_API_KEY)"
+  [ -n "$api_key" ] || { echo "$(date -Is) riot-stats-update: RIOT_DEV_API_KEY not set (see .env.example)" >&2; return 1; }
+
+  status_page="$(curl -sf -H "X-Riot-Token: $api_key" \
+    "https://${RIOT_PLATFORM}.api.riotgames.com/lol/status/v4/platform-data")" \
+    || { echo "$(date -Is) riot-stats-update: server status lookup failed" >&2; return 1; }
+
+  tmp_file="${SERVER_STATUS_OUTPUT_FILE}.tmp"
+  echo "$status_page" | python3 -c '
+import json, sys
+
+data = json.load(sys.stdin)
+incidents = len(data.get("incidents", []))
+maintenances = len(data.get("maintenances", []))
+
+if incidents:
+    status = "Incident"
+elif maintenances:
+    status = "Maintenance"
+else:
+    status = "Online"
+
+json.dump({
+    "region": data.get("name", data.get("id", "")),
+    "status": status,
+    "activeIssues": incidents + maintenances,
+}, sys.stdout)
+' > "$tmp_file" && mv "$tmp_file" "$SERVER_STATUS_OUTPUT_FILE" \
+    || { rm -f "$tmp_file"; echo "$(date -Is) riot-stats-update: server status not found in response" >&2; return 1; }
+
+  echo "$(date -Is) riot-stats-update: wrote $SERVER_STATUS_OUTPUT_FILE"
+}
+
 fetch_all() {
   local api_key main_game main_tag smurfs
   api_key="$(env_var RIOT_DEV_API_KEY)"
@@ -268,6 +305,7 @@ main() {
   echo "$(date -Is) riot-stats-update: updating every ${UPDATE_INTERVAL_SECS}s"
   while true; do
     fetch_patch_notes
+    fetch_server_status
     fetch_all
     sleep "$UPDATE_INTERVAL_SECS"
   done
