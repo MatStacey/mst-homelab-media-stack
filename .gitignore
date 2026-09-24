@@ -3,6 +3,7 @@
 /config/
 /caddy/site/riot-stats-*.json
 /caddy/site/lol-patch-notes.json
+/caddy/site/lol-patch-notes.html
 .DS_Store
 *.log
 __pycache__/

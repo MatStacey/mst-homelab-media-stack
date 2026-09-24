@@ -34,8 +34,10 @@ BADGE_BASE_URL="https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-static
 # transparent padding via a throwaway ImageMagick container (avoids adding
 # an image-processing dependency to the host).
 IMAGEMAGICK_IMAGE="dpokidov/imagemagick:7.1.2-12"
-PATCH_NOTES_URL="https://www.leagueoflegends.com/en-gb/news/tags/patch-notes/"
+PATCH_NOTES_BASE_URL="https://www.leagueoflegends.com"
+PATCH_NOTES_URL="${PATCH_NOTES_BASE_URL}/en-gb/news/tags/patch-notes/"
 PATCH_NOTES_OUTPUT_FILE="${STATS_OUTPUT_DIR}/lol-patch-notes.json"
+PATCH_NOTES_HTML_FILE="${STATS_OUTPUT_DIR}/lol-patch-notes.html"
 USER_AGENT="Mozilla/5.0"
 # Derived from RIOT_TAG_LINE=EUW - adjust both if your accounts are on a
 # different platform (e.g. na1/americas, kr/asia) - see:
@@ -115,13 +117,15 @@ json.dump(stats, sys.stdout)
   echo "$(date -Is) riot-stats-update: wrote $output_file"
 }
 
-fetch_patch_notes() {
-  local page tmp_file="${PATCH_NOTES_OUTPUT_FILE}.tmp"
-  page="$(curl -sfL -A "$USER_AGENT" "$PATCH_NOTES_URL")" \
-    || { echo "$(date -Is) riot-stats-update: patch notes page fetch failed" >&2; return 1; }
+# Finds the latest patch's article path/title/publish date from the
+# patch-notes tag page's embedded article list.
+find_latest_patch_article() {
+  local tag_page
+  tag_page="$(curl -sfL -A "$USER_AGENT" "$PATCH_NOTES_URL")" \
+    || { echo "$(date -Is) riot-stats-update: patch notes index fetch failed" >&2; return 1; }
 
-  echo "$page" | python3 -c '
-import datetime, html, json, re, sys
+  echo "$tag_page" | python3 -c '
+import datetime, json, re, sys
 
 next_data = re.search(r"<script id=\"__NEXT_DATA__\"[^>]*>(.*?)</script>", sys.stdin.read(), re.S)
 if next_data is None:
@@ -145,18 +149,88 @@ if not articles:
 
 latest = max(articles, key=lambda a: a["publishedAt"])
 published = datetime.datetime.fromisoformat(latest["publishedAt"].replace("Z", "+00:00"))
-summary = re.sub(r"<[^>]+>", "", html.unescape(latest["description"]["body"])).strip()
 
 json.dump({
     "patch": re.search(r"Patch ([\w.]+) Notes", latest["title"]).group(1),
     "published": published.strftime("%d %b %Y"),
-    "summary": summary,
+    "path": latest["action"]["payload"]["url"],
 }, sys.stdout)
-' > "$tmp_file" \
-    && mv "$tmp_file" "$PATCH_NOTES_OUTPUT_FILE" \
-    || { rm -f "$tmp_file"; echo "$(date -Is) riot-stats-update: patch notes not found in page" >&2; return 1; }
+'
+}
 
-  echo "$(date -Is) riot-stats-update: wrote $PATCH_NOTES_OUTPUT_FILE"
+# Fetches the full patch notes article, mirrors it as a standalone page
+# (BADGE_OUTPUT_DIR-style static file Caddy serves), and writes a longer
+# plain-text excerpt into the stats JSON for the widget's Summary field.
+fetch_patch_notes() {
+  local article_json patch published article_path article_url
+  article_json="$(find_latest_patch_article)" \
+    || { echo "$(date -Is) riot-stats-update: patch notes not found on index page" >&2; return 1; }
+  patch="$(echo "$article_json" | jq -r .patch)"
+  published="$(echo "$article_json" | jq -r .published)"
+  article_path="$(echo "$article_json" | jq -r .path)"
+  article_url="${PATCH_NOTES_BASE_URL}${article_path}"
+
+  local article_page
+  article_page="$(curl -sfL -A "$USER_AGENT" "$article_url")" \
+    || { echo "$(date -Is) riot-stats-update: patch notes article fetch failed ($article_url)" >&2; return 1; }
+
+  local html_tmp="${PATCH_NOTES_HTML_FILE}.tmp" json_tmp="${PATCH_NOTES_OUTPUT_FILE}.tmp"
+  echo "$article_page" | python3 -c '
+import html, json, re, sys
+
+patch, published, article_url, html_out, json_out = sys.argv[1:6]
+page = sys.stdin.read()
+
+next_data = re.search(r"<script id=\"__NEXT_DATA__\"[^>]*>(.*?)</script>", page, re.S)
+if next_data is None:
+    sys.exit(1)
+blades = json.loads(next_data.group(1))["props"]["pageProps"]["page"]["blades"]
+rich = next((b for b in blades if b.get("type") == "patchNotesRichText"), None)
+if rich is None:
+    sys.exit(1)
+body = rich["richText"]["body"]
+
+summary = ""
+intro = re.search(r"<blockquote class=\"blockquote context\">.*?<p>(.*?)</p>", body, re.S)
+if intro:
+    summary = re.sub(r"<[^>]+>", "", html.unescape(intro.group(1))).strip()
+    summary = re.sub(r"\s+", " ", summary)
+    if len(summary) > 500:
+        summary = summary[:500].rsplit(" ", 1)[0] + "…"
+
+page_html = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Patch {patch} Notes</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  body {{ background: #101418; color: #e6e6e6; font-family: system-ui, sans-serif; max-width: 900px; margin: 0 auto; padding: 24px 16px 64px; line-height: 1.5; }}
+  h1 {{ font-size: 1.6rem; }}
+  a {{ color: #7dd3fc; }}
+  img {{ max-width: 100%; height: auto; }}
+  blockquote {{ border-left: 3px solid #334155; margin: 0; padding: 8px 16px; background: #1a2028; }}
+</style>
+</head>
+<body>
+<h1>League of Legends Patch {patch} Notes</h1>
+<p><a href="{article_url}">View on leagueoflegends.com</a> &middot; Released {published}</p>
+{body}
+</body>
+</html>
+""".format(patch=patch, published=published, article_url=article_url, body=body)
+
+with open(html_out, "w") as f:
+    f.write(page_html)
+
+with open(json_out, "w") as f:
+    json.dump({"patch": patch, "published": published, "summary": summary}, f)
+' "$patch" "$published" "$article_url" "$html_tmp" "$json_tmp" \
+    || { rm -f "$html_tmp" "$json_tmp"; echo "$(date -Is) riot-stats-update: patch notes article body not found ($article_url)" >&2; return 1; }
+
+  mv "$html_tmp" "$PATCH_NOTES_HTML_FILE"
+  mv "$json_tmp" "$PATCH_NOTES_OUTPUT_FILE"
+  echo "$(date -Is) riot-stats-update: wrote $PATCH_NOTES_OUTPUT_FILE and $PATCH_NOTES_HTML_FILE"
 }
 
 fetch_all() {
