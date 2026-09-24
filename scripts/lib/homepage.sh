@@ -4,8 +4,25 @@
 # (services.yaml) - once that file exists, setup.sh leaves it alone, so feel
 # free to edit it by hand afterward to rearrange things.
 
+# Page title (browser tab + header) - Homepage defaults it to "Homepage",
+# but this dashboard is linked as "Status" everywhere else (landing page
+# tile, status.media.lan). Unlike services.yaml this is re-applied on every
+# run, since it only touches the one title: line.
+_homepage_set_title() {
+  docker exec homepage sh -c '
+    f=/app/config/settings.yaml
+    [ -f "$f" ] || exit 0
+    if grep -q "^title:" "$f"; then
+      sed -i "s/^title:.*/title: Status/" "$f"
+    else
+      { echo "title: Status"; cat "$f"; } > "$f.tmp" && mv "$f.tmp" "$f"
+    fi
+  '
+}
+
 configure_homepage() {
   log "Configuring Homepage..."
+  _homepage_set_title
   if docker exec homepage test -f /app/config/services.yaml; then
     log "Homepage: services.yaml already present, skipping (edit it by hand to customize)"
     return

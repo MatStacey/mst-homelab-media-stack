@@ -5,7 +5,10 @@
 # single customapi call - it needs two chained requests across two
 # different regional hosts). Also mirrors the official rank emblem for
 # each account's current tier from Community Dragon, used as that
-# service's Homepage icon.
+# service's Homepage icon. Alongside that, writes the latest League patch
+# notes (title, summary, date, link) to lol-patch-notes.json for a "Patch
+# Notes" customapi widget at the bottom of the same section - no API key
+# needed for that part, so it keeps updating even once the dev key expires.
 #
 # Accounts: RIOT_GAME_NAME#RIOT_TAG_LINE (the "Main" account) plus every
 # "GameName#TagLine" pair in the comma-separated RIOT_SMURF_ACCOUNTS.
@@ -34,6 +37,14 @@ BADGE_BASE_URL="https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-static
 # transparent padding via a throwaway ImageMagick container (avoids adding
 # an image-processing dependency to the host).
 IMAGEMAGICK_IMAGE="dpokidov/imagemagick:7.1.2-12"
+# Patch notes: Data Dragon gives the current live game version, the
+# leagueoflegends.com patch-notes tag page lists the notes articles (newest
+# patch picked by the version in its URL slug), and each article's Open
+# Graph tags give its title/summary/date.
+DDRAGON_VERSIONS_URL="https://ddragon.leagueoflegends.com/api/versions.json"
+LOL_NEWS_BASE_URL="https://www.leagueoflegends.com"
+LOL_NEWS_LOCALE="en-gb"
+PATCH_NOTES_OUTPUT_FILE="${STATS_OUTPUT_DIR}/lol-patch-notes.json"
 # Derived from RIOT_TAG_LINE=EUW - adjust both if your accounts are on a
 # different platform (e.g. na1/americas, kr/asia) - see:
 # https://developer.riotgames.com/docs/lol#routing-values. All accounts
@@ -112,6 +123,72 @@ json.dump(stats, sys.stdout)
   echo "$(date -Is) riot-stats-update: wrote $output_file"
 }
 
+fetch_patch_notes() {
+  local game_version tag_page article_path article_url article
+  game_version="$(curl -sf "$DDRAGON_VERSIONS_URL" | jq -er '.[0]')" || game_version=""
+
+  tag_page="$(curl -sfL -A "Mozilla/5.0" "${LOL_NEWS_BASE_URL}/${LOL_NEWS_LOCALE}/news/tags/patch-notes/")" \
+    || { echo "$(date -Is) riot-stats-update: patch notes index lookup failed" >&2; return 1; }
+
+  # Highest-versioned "patch-<x>-<y>-notes" article linked from the page,
+  # rather than just the first link, so a pinned/featured older article
+  # can't win.
+  article_path="$(echo "$tag_page" | python3 -c '
+import re, sys
+paths = set(re.findall(r"/news/game-updates/patch-[a-z0-9-]+-notes/?", sys.stdin.read()))
+if not paths:
+    sys.exit(1)
+print(max(paths, key=lambda p: [int(n) for n in re.findall(r"\d+", p)]))
+')" || { echo "$(date -Is) riot-stats-update: no patch notes article found on index page" >&2; return 1; }
+  article_url="${LOL_NEWS_BASE_URL}/${LOL_NEWS_LOCALE}${article_path}"
+
+  article="$(curl -sfL -A "Mozilla/5.0" "$article_url")" \
+    || { echo "$(date -Is) riot-stats-update: patch notes article lookup failed ($article_url)" >&2; return 1; }
+
+  local tmp_file="${PATCH_NOTES_OUTPUT_FILE}.tmp"
+  echo "$article" | python3 -c '
+import datetime, html, json, re, sys
+
+page = sys.stdin.read()
+url, game_version = sys.argv[1], sys.argv[2]
+
+def meta(prop):
+    for pattern in (
+        r"<meta[^>]+(?:property|name)=\"%s\"[^>]+content=\"([^\"]*)\"" % re.escape(prop),
+        r"<meta[^>]+content=\"([^\"]*)\"[^>]+(?:property|name)=\"%s\"" % re.escape(prop),
+    ):
+        m = re.search(pattern, page)
+        if m:
+            return html.unescape(m.group(1)).strip()
+    return ""
+
+title = meta("og:title") or "Latest patch notes"
+title = re.sub(r"\s*[-|]\s*League of Legends\s*$", "", title)
+patch = re.search(r"Patch\s+([0-9A-Za-z.]+)", title)
+
+published = meta("article:published_time")
+if not published:
+    m = re.search(r"<time[^>]+datetime=\"([^\"]+)\"", page)
+    published = m.group(1) if m else ""
+try:
+    published = datetime.datetime.fromisoformat(published.replace("Z", "+00:00")).strftime("%d %b %Y")
+except ValueError:
+    pass
+
+json.dump({
+    "patch": patch.group(1) if patch else "",
+    "title": title,
+    "summary": meta("og:description") or meta("description"),
+    "published": published,
+    "gameVersion": game_version,
+    "url": url,
+}, sys.stdout)
+' "$article_url" "$game_version" > "$tmp_file" && mv "$tmp_file" "$PATCH_NOTES_OUTPUT_FILE"
+  rm -f "$tmp_file"
+
+  echo "$(date -Is) riot-stats-update: wrote $PATCH_NOTES_OUTPUT_FILE"
+}
+
 fetch_all() {
   local api_key main_game main_tag smurfs
   api_key="$(env_var RIOT_DEV_API_KEY)"
@@ -138,6 +215,7 @@ fetch_all() {
 main() {
   echo "$(date -Is) riot-stats-update: updating every ${UPDATE_INTERVAL_SECS}s"
   while true; do
+    fetch_patch_notes
     fetch_all
     sleep "$UPDATE_INTERVAL_SECS"
   done
