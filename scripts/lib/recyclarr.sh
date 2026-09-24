@@ -59,9 +59,12 @@ _configure_recyclarr_custom_instance() {
 
 configure_recyclarr() {
   log "Configuring Recyclarr..."
-  _configure_recyclarr_instance "$STACK_RECYCLARR_SONARR_TEMPLATE" "http://sonarr:$STACK_SERVICES_SONARR_PORT" "$SONARR_KEY"
-
   local template
+  IFS=',' read -ra sonarr_templates <<< "$STACK_RECYCLARR_SONARR_TEMPLATES"
+  for template in "${sonarr_templates[@]}"; do
+    _configure_recyclarr_instance "$template" "http://sonarr:$STACK_SERVICES_SONARR_PORT" "$SONARR_KEY"
+  done
+
   IFS=',' read -ra radarr_templates <<< "$STACK_RECYCLARR_RADARR_TEMPLATES"
   for template in "${radarr_templates[@]}"; do
     _configure_recyclarr_instance "$template" "http://radarr:$STACK_SERVICES_RADARR_PORT" "$RADARR_KEY"

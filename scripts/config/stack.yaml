@@ -89,17 +89,16 @@ seerr:
   # scoring at all, so pointing Seerr at one of those means every grab picks
   # by resolution match alone, with no trusted-release/fake-release signal.
   preferred_quality_profile_radarr: "WEBDL 2160p (Combined)"
-  preferred_quality_profile_sonarr: "WEB-1080p"
+  preferred_quality_profile_sonarr: "WEB-2160p (Combined)"
 
 # TRaSH Guides config template IDs (see https://github.com/recyclarr/config-templates)
-# Recyclarr syncs into Sonarr/Radarr. sonarr_template picks the non-4K
-# "WEB-1080p" tier - the guides' standard general-purpose recommendation.
-# radarr_templates is a list: every named profile gets created/kept in sync,
-# so Seerr (or you, manually) can pick per-request. radarr_custom_templates
-# lists templates with no official recyclarr scaffold, each seeded from
+# Recyclarr syncs into Sonarr/Radarr. sonarr_templates/radarr_templates are
+# lists: every named profile gets created/kept in sync, so Seerr (or you,
+# manually) can pick per-request. radarr_custom_templates lists templates
+# with no official recyclarr scaffold, each seeded from
 # scripts/config/recyclarr-<name>.yml instead - see scripts/lib/recyclarr.sh.
 recyclarr:
-  sonarr_template: web-1080p
+  sonarr_templates: [web-1080p, web-2160p-combined]
   radarr_templates: [hd-bluray-web, radarr-remux-2160p-combined]
   radarr_custom_templates: [hybrid-1080p-4k-web]
 

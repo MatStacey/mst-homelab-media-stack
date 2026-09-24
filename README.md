@@ -325,9 +325,9 @@ Jellyfin) also publish ports directly for LAN discovery/native app use.
    network/DNS/ISP level (no in-network proxy can bypass that; a VPN would
    be needed instead).
 
-   Sonarr/Radarr also get a Recyclarr config generated from a curated
-   TRaSH Guides quality-profile template (`recyclarr.sonarr_template`/
-   `radarr_template` in `stack.yaml`), synced once immediately and then
+   Sonarr/Radarr also get a Recyclarr config generated from curated
+   TRaSH Guides quality-profile templates (`recyclarr.sonarr_templates`/
+   `radarr_templates` in `stack.yaml`), synced once immediately and then
    kept current on Recyclarr's own daily cron schedule with no further
    help from this script.
 
