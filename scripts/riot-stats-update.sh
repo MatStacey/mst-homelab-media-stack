@@ -34,6 +34,9 @@ BADGE_BASE_URL="https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-static
 # transparent padding via a throwaway ImageMagick container (avoids adding
 # an image-processing dependency to the host).
 IMAGEMAGICK_IMAGE="dpokidov/imagemagick:7.1.2-12"
+PATCH_NOTES_URL="https://www.leagueoflegends.com/en-gb/news/tags/patch-notes/"
+PATCH_NOTES_OUTPUT_FILE="${STATS_OUTPUT_DIR}/lol-patch-notes.json"
+USER_AGENT="Mozilla/5.0"
 # Derived from RIOT_TAG_LINE=EUW - adjust both if your accounts are on a
 # different platform (e.g. na1/americas, kr/asia) - see:
 # https://developer.riotgames.com/docs/lol#routing-values. All accounts
@@ -112,6 +115,50 @@ json.dump(stats, sys.stdout)
   echo "$(date -Is) riot-stats-update: wrote $output_file"
 }
 
+fetch_patch_notes() {
+  local page tmp_file="${PATCH_NOTES_OUTPUT_FILE}.tmp"
+  page="$(curl -sfL -A "$USER_AGENT" "$PATCH_NOTES_URL")" \
+    || { echo "$(date -Is) riot-stats-update: patch notes page fetch failed" >&2; return 1; }
+
+  echo "$page" | python3 -c '
+import datetime, html, json, re, sys
+
+next_data = re.search(r"<script id=\"__NEXT_DATA__\"[^>]*>(.*?)</script>", sys.stdin.read(), re.S)
+if next_data is None:
+    sys.exit(1)
+
+articles = []
+
+def collect(node):
+    if isinstance(node, dict):
+        if "publishedAt" in node and re.fullmatch(r"League of Legends Patch [\w.]+ Notes", str(node.get("title"))):
+            articles.append(node)
+        for child in node.values():
+            collect(child)
+    elif isinstance(node, list):
+        for child in node:
+            collect(child)
+
+collect(json.loads(next_data.group(1)))
+if not articles:
+    sys.exit(1)
+
+latest = max(articles, key=lambda a: a["publishedAt"])
+published = datetime.datetime.fromisoformat(latest["publishedAt"].replace("Z", "+00:00"))
+summary = re.sub(r"<[^>]+>", "", html.unescape(latest["description"]["body"])).strip()
+
+json.dump({
+    "patch": re.search(r"Patch ([\w.]+) Notes", latest["title"]).group(1),
+    "published": published.strftime("%d %b %Y"),
+    "summary": summary,
+}, sys.stdout)
+' > "$tmp_file" \
+    && mv "$tmp_file" "$PATCH_NOTES_OUTPUT_FILE" \
+    || { rm -f "$tmp_file"; echo "$(date -Is) riot-stats-update: patch notes not found in page" >&2; return 1; }
+
+  echo "$(date -Is) riot-stats-update: wrote $PATCH_NOTES_OUTPUT_FILE"
+}
+
 fetch_all() {
   local api_key main_game main_tag smurfs
   api_key="$(env_var RIOT_DEV_API_KEY)"
@@ -138,6 +185,7 @@ fetch_all() {
 main() {
   echo "$(date -Is) riot-stats-update: updating every ${UPDATE_INTERVAL_SECS}s"
   while true; do
+    fetch_patch_notes
     fetch_all
     sleep "$UPDATE_INTERVAL_SECS"
   done
