@@ -198,6 +198,14 @@ if intro:
     if len(summary) > 500:
         summary = summary[:500].rsplit(" ", 1)[0] + "…"
 
+# Summoner Rift champion balance changes - the section header is always
+# "Champions", but its slugged id can shift, so match by heading text.
+champions = ""
+champ_section = re.search(r"<h2[^>]*>Champions</h2>(.*?)(?=<h2[^>]*>|$)", body, re.S)
+if champ_section:
+    names = re.findall(r"class=\"change-title\"[^>]*><a[^>]*>([^<]+)</a>", champ_section.group(1))
+    champions = ", ".join(html.unescape(name) for name in names)
+
 page_html = """<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -224,7 +232,7 @@ with open(html_out, "w") as f:
     f.write(page_html)
 
 with open(json_out, "w") as f:
-    json.dump({"patch": patch, "published": published, "summary": summary}, f)
+    json.dump({"patch": patch, "published": published, "summary": summary, "champions": champions}, f)
 ' "$patch" "$published" "$article_url" "$html_tmp" "$json_tmp" \
     || { rm -f "$html_tmp" "$json_tmp"; echo "$(date -Is) riot-stats-update: patch notes article body not found ($article_url)" >&2; return 1; }
 
